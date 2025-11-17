@@ -1,0 +1,7 @@
+{
+  "name": "Registro de uso de vehiculo",
+  "description": "Sistema profesional de gestión de flotas y registro de vehículos mediante códigos QR.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
