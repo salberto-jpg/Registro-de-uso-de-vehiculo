@@ -118,7 +118,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       <img 
           src={bgImage}
           alt="Fondo"
-          className="absolute inset-0 w-full h-full object-contain object-bottom z-0"
+          className="absolute inset-0 w-full h-full object-contain object-bottom z-0 -translate-y-[65mm] md:translate-y-0"
       />
 
       {/* Config Button - Hidden/Discreet */}

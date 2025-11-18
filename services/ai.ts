@@ -1,15 +1,17 @@
 import { GoogleGenAI } from "@google/genai";
 import { Vehicle, VehicleLog } from "../types";
 
-// NOTE: API Key is required in environment variables for this to work locally
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-
 export const generateFleetReport = async (vehicles: Vehicle[], logs: VehicleLog[]): Promise<string> => {
-  if (!process.env.API_KEY) {
+  // Access the API key, relying on the polyfill in index.html to prevent errors.
+  const apiKey = process.env.API_KEY;
+
+  if (!apiKey) {
     return "Configuración incompleta: API_KEY no encontrada. Por favor configure la variable de entorno para usar IA.";
   }
 
   try {
+    const ai = new GoogleGenAI({ apiKey });
+    
     const dataContext = JSON.stringify({
       vehicles: vehicles.map(v => ({ name: v.name, mileage: v.currentMileage, status: v.status })),
       recentLogs: logs.slice(0, 10) // Analyze last 10 logs

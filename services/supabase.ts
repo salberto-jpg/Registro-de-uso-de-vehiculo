@@ -10,7 +10,7 @@ const HARDCODED_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 let supabaseInstance: SupabaseClient | null = null;
 
 export const getSupabaseConfig = () => {
-  // Prioritize environment variables, then local storage, then hardcoded defaults
+  // Access environment variables, relying on the polyfill in index.html to prevent errors.
   const envUrl = process.env.VITE_SUPABASE_URL;
   const envKey = process.env.VITE_SUPABASE_ANON_KEY;
   

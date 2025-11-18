@@ -11,6 +11,19 @@
     <style>
       body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
     </style>
+    <script>
+      // Robust polyfill to prevent ReferenceError from libraries expecting a Node.js environment.
+      if (typeof process === 'undefined') {
+        var process = {
+          env: {},
+          versions: {}, // Some libs check this
+        };
+        window.process = process;
+      }
+      if (typeof global === 'undefined') {
+        window.global = window;
+      }
+    </script>
   <script type="importmap">
 {
   "imports": {
