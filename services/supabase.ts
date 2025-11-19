@@ -1,3 +1,4 @@
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const STORAGE_URL_KEY = 'fleet_sb_url';
@@ -10,9 +11,14 @@ const HARDCODED_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 let supabaseInstance: SupabaseClient | null = null;
 
 export const getSupabaseConfig = () => {
-  // Access environment variables, relying on the polyfill in index.html to prevent errors.
-  const envUrl = process.env.VITE_SUPABASE_URL;
-  const envKey = process.env.VITE_SUPABASE_ANON_KEY;
+  let envUrl, envKey;
+  try {
+    // Safely attempt to access process.env
+    envUrl = process.env.VITE_SUPABASE_URL;
+    envKey = process.env.VITE_SUPABASE_ANON_KEY;
+  } catch (e) {
+    // process is not defined, ignore
+  }
   
   const localUrl = localStorage.getItem(STORAGE_URL_KEY);
   const localKey = localStorage.getItem(STORAGE_ANON_KEY);
@@ -79,4 +85,9 @@ export const disconnectSupabase = () => {
   localStorage.removeItem(STORAGE_URL_KEY);
   localStorage.removeItem(STORAGE_ANON_KEY);
   supabaseInstance = null;
+};
+
+export const resetConnection = () => {
+    disconnectSupabase();
+    // Automatically re-init with defaults will happen on next getSupabaseClient call
 };

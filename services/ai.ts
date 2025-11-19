@@ -1,9 +1,15 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { Vehicle, VehicleLog } from "../types";
 
 export const generateFleetReport = async (vehicles: Vehicle[], logs: VehicleLog[]): Promise<string> => {
-  // Access the API key, relying on the polyfill in index.html to prevent errors.
-  const apiKey = process.env.API_KEY;
+  let apiKey;
+  try {
+    // Access the API key safely
+    apiKey = process.env.API_KEY;
+  } catch (e) {
+    // process is not defined
+  }
 
   if (!apiKey) {
     return "Configuración incompleta: API_KEY no encontrada. Por favor configure la variable de entorno para usar IA.";

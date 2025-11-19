@@ -1,14 +1,16 @@
+
 import React, { useState, useEffect } from 'react';
 import { Login } from './pages/Login';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { DriverView } from './pages/DriverView';
 import { User, UserRole } from './types';
 import { subscribeToAuthChanges, getCurrentUserProfile, updateUserPassword } from './services/db';
+import { QrScanner } from './components/QrScanner';
 
 const UpdatePasswordView: React.FC<{ onUpdated: () => void }> = ({ onUpdated }) => {
     const [pass, setPass] = useState('');
     const [loading, setLoading] = useState(false);
-    const bgImage = "https://wqccvxkbmoqgiiplogew.supabase.co/storage/v1/object/public/imagenes/Gemini_Generated_Image_aaf59jaaf59jaaf5.png";
+    const bgImage = "https://wqccvxkbmoqgiiplogew.supabase.co/storage/v1/object/public/imagenes/fondo.png";
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -92,6 +94,33 @@ const App: React.FC = () => {
           window.location.hash = `/vehicle/${manualId.trim()}`;
       }
   };
+
+  const handleScan = (decodedText: string) => {
+      try {
+          // Check if it's a full URL
+          if (decodedText.includes('/vehicle/')) {
+              // If it's a full URL from our app (e.g. http://domain.com/#/vehicle/v1)
+              // We just need to extract the hash part or redirect to it.
+              // Since we use hash routing, setting window.location.href usually works.
+              
+              // Extract the ID just to be safe and use our router
+              const parts = decodedText.split('/vehicle/');
+              if (parts.length > 1) {
+                  const id = parts[1];
+                  window.location.hash = `/vehicle/${id}`;
+              } else {
+                  // Fallback
+                  window.location.href = decodedText;
+              }
+          } else {
+              // Assume it's just the ID
+              window.location.hash = `/vehicle/${decodedText}`;
+          }
+      } catch (e) {
+          console.error("Error parsing scan result", e);
+          alert("Código QR no válido");
+      }
+  };
   
   const handlePasswordUpdated = async () => {
       setIsRecovery(false);
@@ -120,37 +149,73 @@ const App: React.FC = () => {
 
   if (user.role === UserRole.DRIVER) {
     return (
-      <div className="min-h-screen bg-gray-900 flex flex-col">
+      <div className="min-h-screen bg-[#0f1115] flex flex-col font-sans">
           
-          <header className="p-6 flex justify-between items-center border-b border-gray-800">
-            <div>
-              <h1 className="text-white font-bold text-lg">Uso de Vehiculos</h1>
-              <p className="text-gray-400 text-sm">Hola, {user.name.split(' ')[0]}</p>
+          {/* Modern Header */}
+          <header className="px-6 pt-8 pb-2 flex justify-between items-end">
+            <div className="flex flex-col">
+              <span className="text-indigo-400 text-[10px] font-bold tracking-[0.2em] uppercase mb-1 opacity-80">
+                Gestión de Vehículo
+              </span>
+              <h1 className="text-white text-3xl font-black tracking-tight leading-none">
+                Hola, <br/>
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 to-white">
+                  {user.name.split(' ')[0]}
+                </span>
+                <span className="ml-2 text-2xl inline-block animate-pulse">👋</span>
+              </h1>
             </div>
-            <button onClick={() => setUser(null)} className="text-gray-400 hover:text-white text-sm">Salir</button>
+            
+            <button 
+                onClick={() => setUser(null)} 
+                className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs font-semibold px-4 py-2 rounded-full transition-all active:scale-95 backdrop-blur-md"
+            >
+                Salir
+            </button>
           </header>
 
-          <main className="flex-1 flex flex-col items-center justify-center p-6 text-center max-w-md mx-auto w-full">
-              <div className="mb-8 p-6 bg-gray-800 rounded-full shadow-lg border border-gray-700">
-                  <svg className="w-16 h-16 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 4v1m6 11h2m-6 0h-2v4h-4v-4H8m13-4V7a1 1 0 00-1-1h-1.586a1 1 0 01-.707-.293l-1.121-1.121A2 2 0 0011.172 3H8.828a2 2 0 00-1.414.586L6.293 4.707A1 1 0 015.586 5H4a1 1 0 00-1 1v4a1 1 0 001 1h3.293A1 1 0 017 11.707V19a1 1 0 001 1h8a1 1 0 001-1v-7.586c0-.528.21-1.033.586-1.414l5-5z"></path>
-                  </svg>
+          <main className="flex-1 flex flex-col items-center justify-start p-4 text-center max-w-md mx-auto w-full space-y-6">
+              
+              {/* Scanner Container */}
+              <div className="w-full flex-1 flex flex-col justify-center max-h-[400px]">
+                  <QrScanner onScan={handleScan} />
               </div>
-              <h2 className="text-2xl font-bold text-white mb-2">Listo para escanear</h2>
-              <p className="text-gray-400 mb-8">Utiliza la cámara para leer el código QR del vehículo.</p>
 
-              <div className="w-full bg-gray-800 p-6 rounded-xl border border-gray-700">
-                  <form onSubmit={handleManualSubmit} className="space-y-4">
-                      <label htmlFor="manual-id" className="block text-left text-sm font-medium text-gray-300">¿Problemas con la cámara?</label>
+              {/* Manual Input Card */}
+              <div className="w-full bg-[#1a1d24] p-5 rounded-2xl border border-white/5 shadow-2xl">
+                  <form onSubmit={handleManualSubmit} className="space-y-3">
+                      <div className="flex justify-between items-baseline">
+                        <label htmlFor="manual-id" className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
+                            Ingreso Manual
+                        </label>
+                        <span className="text-[10px] text-gray-600">¿Problemas con la cámara?</span>
+                      </div>
                       <div className="flex gap-2">
-                        <input id="manual-id" type="text" placeholder="ID del Vehículo (ej. v1)" value={manualId} onChange={(e) => setManualId(e.target.value)} className="flex-1 bg-gray-900 border border-gray-600 text-white rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none" />
-                        <button type="submit" className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">Ir</button>
+                        <input 
+                            id="manual-id" 
+                            type="text" 
+                            placeholder="ID del Vehículo (ej. v1)" 
+                            value={manualId} 
+                            onChange={(e) => setManualId(e.target.value)} 
+                            className="flex-1 bg-[#0f1115] border border-gray-700 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none placeholder-gray-600 font-medium transition-all" 
+                        />
+                        <button 
+                            type="submit" 
+                            className="bg-gradient-to-br from-indigo-600 to-blue-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:shadow-indigo-500/30 transition-all active:scale-95"
+                        >
+                            Ir
+                        </button>
                       </div>
                   </form>
               </div>
           </main>
 
-          <footer className="p-6 text-center text-gray-600 text-xs">v1.0.3 &bull; Conectado a Supabase</footer>
+          <footer className="p-4 pb-8 text-center">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5">
+                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                  <span className="text-[10px] font-medium text-gray-400">Sistema Operativo v1.0.5</span>
+              </div>
+          </footer>
       </div>
     );
   }

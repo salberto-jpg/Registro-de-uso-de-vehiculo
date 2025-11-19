@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { getAllVehicles, getAllLogs, createVehicle, updateVehicle, deleteVehicle, getAllUsers, adminCreateUser, adminUpdateUser, resetPassword, signOut, seedDatabase } from '../services/db';
 import { generateFleetReport } from '../services/ai';
@@ -15,6 +16,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'fleet' | 'logs' | 'users'>('fleet');
+  const [fetchError, setFetchError] = useState<string | null>(null);
   
   // Use prop directly - this is the source of truth
   const currentUser = user;
@@ -23,6 +25,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   const [showUserModal, setShowUserModal] = useState(false);
   const [showSqlModal, setShowSqlModal] = useState(false);
   const [qrVehicle, setQrVehicle] = useState<Vehicle | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const [aiReport, setAiReport] = useState<string | null>(null);
   const [loadingAi, setLoadingAi] = useState(false);
@@ -49,13 +52,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
 
   const fetchData = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
         const [v, l, u] = await Promise.all([getAllVehicles(), getAllLogs(), getAllUsers()]);
         setVehicles(v);
         setLogs(l);
         setUsers(u);
-    } catch (e) {
+    } catch (e: any) {
         console.error("Error fetching dashboard data", e);
+        setFetchError(e.message || "Error de conexión desconocido");
     } finally {
         setLoading(false);
     }
@@ -236,8 +241,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
       
       const baseUrl = window.location.href.split('#')[0];
       const targetUrl = `${baseUrl}#/vehicle/${qrVehicle.id}`;
-      const qrSize = 500; // High res for download
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(targetUrl)}`;
+      const qrSize = 500; 
+      // Updated to use QuickChart for more reliable downloads
+      const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(targetUrl)}&size=${qrSize}`;
 
       try {
           const response = await fetch(qrUrl);
@@ -261,7 +267,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
       const endTime = end ? new Date(end).getTime() : new Date().getTime();
       const diffMs = endTime - startTime;
       
-      if (diffMs < 0) return "0m"; // Should not happen but for safety
+      if (diffMs < 0) return "0m"; 
 
       const hours = Math.floor(diffMs / 3600000);
       const minutes = Math.floor((diffMs % 3600000) / 60000);
@@ -269,7 +275,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
       const durationStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
       
       if (!end) {
-          return `${durationStr}`; // Returns elapsed time for active trips
+          return `${durationStr}`; 
       }
       return durationStr;
   };
@@ -480,7 +486,7 @@ DROP TABLE IF EXISTS profiles CASCADE;
                         className="text-sm text-gray-500 hover:text-gray-800 font-medium flex items-center gap-1 border px-2 py-1 rounded hover:bg-gray-100"
                         title="Reparar Base de Datos"
                     >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                         Ayuda DB
                     </button>
                 </div>
@@ -492,6 +498,32 @@ DROP TABLE IF EXISTS profiles CASCADE;
         </header>
 
         <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+          
+          {/* ERROR BANNER */}
+          {fetchError && (
+              <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6 shadow">
+                  <div className="flex items-start">
+                      <div className="flex-shrink-0">
+                          <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                      </div>
+                      <div className="ml-3 flex-1">
+                          <h3 className="text-sm leading-5 font-medium text-red-800">
+                              Error de Conexión con Base de Datos
+                          </h3>
+                          <div className="mt-2 text-sm leading-5 text-red-700">
+                              <p>{fetchError}</p>
+                              <p className="mt-2 font-semibold">Posibles soluciones:</p>
+                              <ul className="list-disc pl-5 mt-1 space-y-1">
+                                  <li>Si es la primera vez, haz clic en <strong>Ayuda DB</strong> (arriba) y ejecuta el script de "Reparar Permisos" en Supabase.</li>
+                                  <li>Verifica que tu usuario tenga permisos de Administrador.</li>
+                              </ul>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          )}
           
           {view === 'fleet' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
@@ -553,7 +585,7 @@ DROP TABLE IF EXISTS profiles CASCADE;
                 + Nuevo Vehículo
                 </button>
               </div>
-              {vehicles.length === 0 ? (
+              {vehicles.length === 0 && !fetchError ? (
                   <div className="p-10 text-center flex flex-col items-center justify-center gap-4">
                       <p className="text-gray-500">No hay vehículos registrados.</p>
                       <button
@@ -577,20 +609,27 @@ DROP TABLE IF EXISTS profiles CASCADE;
                             <li key={vehicle.id} className="p-4 hover:bg-gray-50 transition">
                                 <div className="flex items-center justify-between flex-wrap gap-4">
                                 <div className="flex items-center gap-4 flex-1 min-w-0">
-                                    <div className="h-12 w-12 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden border border-gray-300">
+                                    <div 
+                                      className="h-32 w-56 rounded-lg bg-gray-800 flex-shrink-0 overflow-hidden border border-gray-300 relative shadow-sm group cursor-pointer"
+                                      onClick={() => vehicle.imageUrl && setPreviewImage(vehicle.imageUrl)}
+                                    >
                                         {vehicle.imageUrl ? (
-                                            <img src={vehicle.imageUrl} alt={vehicle.name} className="h-full w-full object-cover" />
+                                            <img src={vehicle.imageUrl} alt={vehicle.name} className="h-full w-full object-contain transition-transform duration-500 group-hover:scale-105" />
                                         ) : (
                                             <div className="h-full w-full flex items-center justify-center text-gray-400">
-                                                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                                <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                            </div>
+                                        )}
+                                        {vehicle.imageUrl && (
+                                            <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
                                             </div>
                                         )}
                                     </div>
                                     <div>
-                                        <p className="text-sm font-medium text-indigo-600 truncate">{vehicle.name}</p>
-                                        <div className="flex gap-2 text-xs text-gray-500 mt-1">
-                                            <span>{vehicle.licensePlate}</span>
-                                            <span>&bull;</span>
+                                        <p className="text-lg font-bold text-indigo-600 truncate">{vehicle.name}</p>
+                                        <div className="flex flex-col gap-1 text-sm text-gray-500 mt-1">
+                                            <span className="font-mono text-gray-800 font-semibold bg-gray-100 px-2 py-0.5 rounded w-fit">{vehicle.licensePlate}</span>
                                             <span>{vehicle.currentMileage.toLocaleString()} km</span>
                                         </div>
                                         {activeLog && (
@@ -648,7 +687,7 @@ DROP TABLE IF EXISTS profiles CASCADE;
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {logs.length === 0 ? (
+                        {logs.length === 0 && !fetchError ? (
                              <tr><td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay historial registrado</td></tr>
                         ) : logs.map((log) => (
                           <tr key={log.id}>
@@ -829,6 +868,22 @@ DROP TABLE IF EXISTS profiles CASCADE;
                      </div>
                  </div>
              </div>
+          </div>
+      )}
+      
+      {previewImage && (
+          <div className="fixed z-[60] inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity" onClick={() => setPreviewImage(null)}>
+              <div className="relative max-w-5xl w-full max-h-[90vh] flex flex-col items-center">
+                  <button onClick={() => setPreviewImage(null)} className="absolute -top-12 right-0 text-white/80 hover:text-white text-xl font-bold flex items-center gap-2 bg-white/10 px-4 py-2 rounded-full">
+                      Cerrar <span>&times;</span>
+                  </button>
+                  <img 
+                      src={previewImage} 
+                      alt="Detalle de Vehículo" 
+                      className="w-full h-full object-contain rounded-lg shadow-2xl border border-gray-700"
+                      onClick={(e) => e.stopPropagation()} // Prevent close on image click
+                  />
+              </div>
           </div>
       )}
     </div>

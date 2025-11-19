@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 interface QRCodeProps {
@@ -12,9 +13,9 @@ export const QRCodeDisplay: React.FC<QRCodeProps> = ({ vehicleId, vehicleName, s
   const baseUrl = window.location.href.split('#')[0];
   const targetUrl = `${baseUrl}#/vehicle/${vehicleId}`;
   
-  // QR Code API
+  // QR Code API - Using QuickChart for better HTTPS support and reliability
   const qrSize = Math.max(100, Math.min(500, size));
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(targetUrl)}`;
+  const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(targetUrl)}&size=${qrSize}&margin=1`;
 
   return (
     <div className="flex flex-col items-center p-6 bg-white rounded-xl border border-gray-200 shadow-sm max-w-sm mx-auto print:shadow-none print:border-0 print:p-0">

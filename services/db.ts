@@ -199,7 +199,10 @@ export const getAllUsers = async (): Promise<User[]> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('profiles').select('*').order('name');
-    if (error) return [];
+    if (error) {
+        console.error("Error fetching users:", error);
+        throw new Error(`Error cargando usuarios: ${error.message}`);
+    }
     return data.map(transformUser);
   }
   return loadMockDB().users;
@@ -303,6 +306,7 @@ export const getVehicle = async (id: string): Promise<Vehicle | undefined> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('vehicles').select('*').eq('id', id).single();
+    if (error) console.error("Error fetching vehicle:", error);
     if (error || !data) return undefined;
     return transformVehicle(data);
   }
@@ -315,7 +319,10 @@ export const getAllVehicles = async (): Promise<Vehicle[]> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('vehicles').select('*').order('name');
-    if (error) return [];
+    if (error) {
+        console.error("Error fetching vehicles:", error);
+        throw new Error(`Error cargando vehículos: ${error.message} (Hint: Ejecuta 'Ayuda DB')`);
+    }
     return data.map(transformVehicle);
   }
   return loadMockDB().vehicles;
@@ -437,7 +444,10 @@ export const getAllLogs = async (): Promise<VehicleLog[]> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('logs').select('*').order('start_time', { ascending: false });
-    if (error) return [];
+    if (error) {
+        console.error("Error fetching logs:", error);
+        throw new Error(`Error cargando historial: ${error.message}`);
+    }
     return data.map(transformLog);
   }
   return loadMockDB().logs;
