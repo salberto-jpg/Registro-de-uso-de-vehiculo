@@ -13,10 +13,11 @@
     </style>
     <script>
       // Robust polyfill to prevent ReferenceError from libraries expecting a Node.js environment.
+      // This is kept for compatibility with browser-based checks in some libs.
       if (typeof process === 'undefined') {
         var process = {
           env: {},
-          versions: {}, // Some libs check this
+          versions: {},
         };
         window.process = process;
       }
@@ -27,18 +28,21 @@
   <script type="importmap">
 {
   "imports": {
-    "recharts": "https://aistudiocdn.com/recharts@^3.4.1",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.83.0",
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.29.1",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
-    "html5-qrcode": "https://aistudiocdn.com/html5-qrcode@2.3.8"
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "vite": "https://aistudiocdn.com/vite@^7.2.2",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+    "recharts": "https://aistudiocdn.com/recharts@^3.4.1",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "html5-qrcode": "https://aistudiocdn.com/html5-qrcode@^2.3.8"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
