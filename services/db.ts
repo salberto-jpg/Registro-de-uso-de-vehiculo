@@ -118,7 +118,8 @@ export const signInWithEmail = async (email: string, password: string): Promise<
       .single();
 
     if (profileError || !profile) {
-      return { user: null, error: 'Usuario autenticado pero no tiene perfil asignado.' };
+      console.error("Login Error: Auth exitoso pero fallo al cargar perfil", profileError);
+      return { user: null, error: 'Usuario autenticado pero no tiene perfil asignado. Contacte al admin.' };
     }
 
     return { user: transformUser(profile) };
@@ -180,6 +181,10 @@ export const getCurrentUserProfile = async (): Promise<User | null> => {
         .select('*')
         .eq('email', user.email)
         .single();
+
+      if (profileError) {
+          console.warn("Error cargando perfil (puede ser RLS o tabla vacía):", profileError.message);
+      }
 
       if (profile) return transformUser(profile);
     }
