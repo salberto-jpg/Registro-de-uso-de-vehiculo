@@ -65,6 +65,13 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+      // Temporizador de seguridad: Si la carga tarda más de 3 segundos, forzar el fin de la carga.
+      // Esto evita que la app se quede en "Iniciando Sistema..." si la DB no responde.
+      const safetyTimeout = setTimeout(() => {
+          console.warn("Carga lenta detectada: Forzando fin de carga.");
+          setLoading(false);
+      }, 3000);
+
       const { data: { subscription } } = subscribeToAuthChanges(async (event, session) => {
           if (event === 'PASSWORD_RECOVERY') {
               setIsRecovery(true);
@@ -82,11 +89,19 @@ const App: React.FC = () => {
       // Carga inicial del perfil
       getCurrentUserProfile().then(u => {
           if (u) setUser(u);
-      }).finally(() => {
+      })
+      .catch(err => {
+          console.error("Error en carga inicial de usuario:", err);
+      })
+      .finally(() => {
+          clearTimeout(safetyTimeout); // Cancelar el temporizador si cargó bien
           setLoading(false); // Finalizar carga tanto si hay usuario como si no
       });
 
-      return () => subscription.unsubscribe();
+      return () => {
+          clearTimeout(safetyTimeout);
+          subscription.unsubscribe();
+      };
   }, []);
 
   const vehicleMatch = route.match(/#\/vehicle\/(.+)/);

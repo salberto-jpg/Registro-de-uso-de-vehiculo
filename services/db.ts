@@ -158,29 +158,34 @@ export const updateUserPassword = async (password: string) => {
 };
 
 export const getCurrentUserProfile = async (): Promise<User | null> => {
-  const supabase = getSupabaseClient();
-  if (isSupabaseConfigured() && supabase) {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
+  try {
+    const supabase = getSupabaseClient();
+    if (isSupabaseConfigured() && supabase) {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) return null;
 
-    // --- CRITICAL FIX: Always grant Admin rights to the owner email ---
-    // This prevents lockout if the profiles table is wiped or RLS fails.
-    if (user.email === 'salberto@metallo.com.ar' || user.email === 'admin@fleet.com') {
-         return { 
-             id: user.id, 
-             email: user.email!, 
-             name: 'Super Admin', 
-             role: UserRole.ADMIN 
-         };
+      // --- CRITICAL FIX: Always grant Admin rights to the owner email ---
+      // This prevents lockout if the profiles table is wiped or RLS fails.
+      if (user.email === 'salberto@metallo.com.ar' || user.email === 'admin@fleet.com') {
+          return { 
+              id: user.id, 
+              email: user.email!, 
+              name: 'Super Admin', 
+              role: UserRole.ADMIN 
+          };
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', user.email)
+        .single();
+
+      if (profile) return transformUser(profile);
     }
-
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('email', user.email)
-      .single();
-
-    if (profile) return transformUser(profile);
+  } catch (e) {
+    console.error("Error recuperando perfil de usuario:", e);
+    return null;
   }
   return null;
 };
