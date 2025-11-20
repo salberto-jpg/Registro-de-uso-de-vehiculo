@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Uso de Vehiculos</title>
+    <title>Gestión de Vehículos</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,30 +12,25 @@
       body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
     </style>
     <script>
-      // Robust polyfill to prevent ReferenceError from libraries expecting a Node.js environment.
-      // This is kept for compatibility with browser-based checks in some libs.
-      if (typeof process === 'undefined') {
-        var process = {
-          env: {},
-          versions: {},
-        };
-        window.process = process;
-      }
-      if (typeof global === 'undefined') {
-        window.global = window;
-      }
+      // Robust polyfill for process.env to prevent library crashes
+      window.process = {
+        env: { NODE_ENV: 'production' },
+        versions: { node: '18.0.0' },
+        version: 'v18.0.0'
+      };
+      window.global = window;
     </script>
   <script type="importmap">
 {
   "imports": {
-    "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.83.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "vite": "https://aistudiocdn.com/vite@^7.2.4",
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "vite": "https://aistudiocdn.com/vite@^7.2.2",
     "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
     "recharts": "https://aistudiocdn.com/recharts@^3.4.1",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.84.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
     "html5-qrcode": "https://aistudiocdn.com/html5-qrcode@^2.3.8"
   }
 }
