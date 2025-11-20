@@ -49,6 +49,7 @@ const UpdatePasswordView: React.FC<{ onUpdated: () => void }> = ({ onUpdated }) 
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true); // Estado de carga inicial
   const [route, setRoute] = useState<string>(window.location.hash);
   const [manualId, setManualId] = useState('');
   
@@ -78,8 +79,11 @@ const App: React.FC = () => {
           }
       });
       
+      // Carga inicial del perfil
       getCurrentUserProfile().then(u => {
           if (u) setUser(u);
+      }).finally(() => {
+          setLoading(false); // Finalizar carga tanto si hay usuario como si no
       });
 
       return () => subscription.unsubscribe();
@@ -97,23 +101,15 @@ const App: React.FC = () => {
 
   const handleScan = (decodedText: string) => {
       try {
-          // Check if it's a full URL
           if (decodedText.includes('/vehicle/')) {
-              // If it's a full URL from our app (e.g. http://domain.com/#/vehicle/v1)
-              // We just need to extract the hash part or redirect to it.
-              // Since we use hash routing, setting window.location.href usually works.
-              
-              // Extract the ID just to be safe and use our router
               const parts = decodedText.split('/vehicle/');
               if (parts.length > 1) {
                   const id = parts[1];
                   window.location.hash = `/vehicle/${id}`;
               } else {
-                  // Fallback
                   window.location.href = decodedText;
               }
           } else {
-              // Assume it's just the ID
               window.location.hash = `/vehicle/${decodedText}`;
           }
       } catch (e) {
@@ -129,6 +125,17 @@ const App: React.FC = () => {
       window.location.hash = '';
   };
 
+  if (loading) {
+      return (
+          <div className="min-h-screen flex items-center justify-center bg-gray-100">
+              <div className="flex flex-col items-center gap-4">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+                  <p className="text-gray-600 font-medium animate-pulse">Iniciando Sistema...</p>
+              </div>
+          </div>
+      );
+  }
+
   if (isRecovery) {
       return <UpdatePasswordView onUpdated={handlePasswordUpdated} />;
   }
@@ -138,12 +145,10 @@ const App: React.FC = () => {
   }
 
   if (vehicleId) {
-    // onLogout here just means "Exit Driver View", not "Sign Out"
     return <DriverView user={user} vehicleId={vehicleId} onLogout={() => { window.location.hash = ''; }} />;
   }
 
   if (user.role === UserRole.ADMIN || user.role === UserRole.SUPERVISOR) {
-    // Pass the user prop to ensure Admin Dashboard knows who is logged in immediately
     return <AdminDashboard user={user} />;
   }
 
@@ -151,7 +156,6 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-[#0f1115] flex flex-col font-sans">
           
-          {/* Modern Header */}
           <header className="px-6 pt-8 pb-2 flex justify-between items-end">
             <div className="flex flex-col">
               <span className="text-indigo-400 text-[10px] font-bold tracking-[0.2em] uppercase mb-1 opacity-80">
@@ -176,12 +180,10 @@ const App: React.FC = () => {
 
           <main className="flex-1 flex flex-col items-center justify-start p-4 text-center max-w-md mx-auto w-full space-y-6">
               
-              {/* Scanner Container */}
               <div className="w-full flex-1 flex flex-col justify-center max-h-[400px]">
                   <QrScanner onScan={handleScan} />
               </div>
 
-              {/* Manual Input Card */}
               <div className="w-full bg-[#1a1d24] p-5 rounded-2xl border border-white/5 shadow-2xl">
                   <form onSubmit={handleManualSubmit} className="space-y-3">
                       <div className="flex justify-between items-baseline">
