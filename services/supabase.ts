@@ -1,4 +1,3 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const STORAGE_URL_KEY = 'fleet_sb_url';
@@ -9,17 +8,22 @@ const HARDCODED_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 
 let supabaseInstance: SupabaseClient | null = null;
 
+const getEnv = (key: string) => {
+    try {
+        // Safety check for process.env access
+        if (typeof process !== 'undefined' && process.env) {
+            return process.env[key];
+        }
+    } catch (e) {
+        // Ignore
+    }
+    return undefined;
+}
+
 export const getSupabaseConfig = () => {
-  let envUrl, envKey;
-  try {
-    // Accessing process.env directly can sometimes cause issues in browser if not polyfilled
-    // We check for existence implicitly or rely on the try/catch
-    envUrl = process.env.VITE_SUPABASE_URL;
-    envKey = process.env.VITE_SUPABASE_ANON_KEY;
-  } catch (e) {
-    // Ignore reference errors
-  }
-  
+  const envUrl = getEnv('VITE_SUPABASE_URL');
+  const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
+
   const localUrl = localStorage.getItem(STORAGE_URL_KEY);
   const localKey = localStorage.getItem(STORAGE_ANON_KEY);
 

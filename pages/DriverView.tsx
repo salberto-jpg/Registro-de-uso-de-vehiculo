@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { getVehicle, getActiveLog, startTrip, endTrip, getUserActiveTrip } from '../services/db';
 import { Vehicle, VehicleLog, User, VehicleStatus } from '../types';
@@ -157,6 +158,13 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
                      <div className="bg-white w-full max-w-sm p-6 rounded-2xl shadow-xl text-center space-y-6">
                         <p className="text-gray-600 text-lg font-medium">¿Vas a dejar el vehículo?</p>
                         
+                        {/* FOTO DEL VEHICULO AL DEVOLVER */}
+                        {vehicle.imageUrl && (
+                            <div className="w-full h-48 rounded-xl overflow-hidden bg-white border border-gray-200 relative">
+                                <img src={vehicle.imageUrl} alt={vehicle.name} className="w-full h-full object-contain" />
+                            </div>
+                        )}
+
                         <button
                             onClick={handleReturnVehicle}
                             disabled={actionLoading}
@@ -191,6 +199,13 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
                     Al tomar el vehículo, confirmas que tienes las llaves y estás listo para salir.
                 </div>
                 
+                {/* FOTO DEL VEHICULO AL TOMAR */}
+                {vehicle.imageUrl && (
+                    <div className="w-full h-48 rounded-xl overflow-hidden bg-white border border-gray-200 relative">
+                        <img src={vehicle.imageUrl} alt={vehicle.name} className="w-full h-full object-contain" />
+                    </div>
+                )}
+
                 <button
                     onClick={handleTakeVehicle}
                     disabled={actionLoading}

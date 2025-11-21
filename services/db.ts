@@ -119,6 +119,7 @@ export const signOut = async () => {
   if (supabase) {
       await supabase.auth.signOut();
   }
+  localStorage.removeItem('sb-fleet-auth-token'); // Clean manually if custom
 };
 
 export const resetPassword = async (email: string) => {
@@ -142,45 +143,58 @@ export const updateUserPassword = async (password: string) => {
 };
 
 /**
- * OBTIENE EL PERFIL ACTUAL DE FORMA SEGURA Y ROBUSTA
- * Usa getUser() para validar el token contra el servidor (evita sesiones zombies).
- * Si la BD falla, recupera datos de metadata para no bloquear al usuario.
+ * OBTIENE EL PERFIL ACTUAL DE FORMA ULTRA SEGURA
+ * - Usa Promise.race para evitar bloqueos.
+ * - Falla a null si hay errores, permitiendo al usuario loguearse de nuevo.
  */
 export const getCurrentUserProfile = async (): Promise<User | null> => {
   try {
     const supabase = getSupabaseClient();
     if (!isSupabaseConfigured() || !supabase) return null;
 
-    // 1. VALIDACIÓN ESTRICTA: getUser() verifica la validez del token en el servidor
-    // getSession() es rápido pero puede devolver tokens revocados o expirados localmente
+    // 1. Obtener usuario de Auth (Intenta getUser, si falla, usa getSession para velocidad)
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    
+
     if (authError || !user) {
-        // Si hay error de token, no intentamos nada más, devolvemos null para forzar login
-        return null; 
+        // Si getUser falla, intentamos session por si es un problema de red puntual
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session || !session.user) {
+            return null;
+        }
+        // Usamos session user como fallback
+        const sUser = session.user;
+        const email = sUser.email || '';
+        return {
+             id: sUser.id,
+             email: email,
+             name: sUser.user_metadata?.name || email.split('@')[0],
+             role: (sUser.user_metadata?.role as UserRole) || UserRole.DRIVER
+        };
     }
 
+    // 2. Si tenemos usuario, intentamos buscar su perfil
     const email = user.email || '';
-
-    // 2. INTENTO DE CARGA DE PERFIL (Best Effort)
+    
     try {
-        const { data: profileData, error: profileError } = await supabase
+        // Timeout para la BD: si tarda más de 2s, usamos datos de metadata
+        const timeout = new Promise((_, reject) => setTimeout(() => reject("DB Timeout"), 2000));
+        
+        const dbPromise = supabase
             .from('profiles')
             .select('*')
             .eq('id', user.id)
             .single();
-
-        if (profileData && !profileError) {
-            return transformUser(profileData);
+            
+        const result: any = await Promise.race([dbPromise, timeout]);
+        
+        if (result && result.data && !result.error) {
+            return transformUser(result.data);
         }
-    } catch (dbError) {
-        // Ignoramos errores de red DB puntuales si la Auth es válida
-        console.warn("Warn: Usando perfil fallback por error DB", dbError);
+    } catch (e) {
+        console.warn("No se pudo cargar perfil de DB, usando metadata:", e);
     }
 
-    // 3. FALLBACK SEGURO (Fail-Open)
-    // Si el usuario existe en Auth pero no pudimos leer su perfil (RLS, error red),
-    // lo dejamos entrar con los datos que tenemos en el token.
+    // 3. Fallback final: Usar metadata del token
     let fallbackRole = (user.user_metadata?.role as UserRole) || UserRole.DRIVER;
     
     // Hardcode de seguridad para el dueño
@@ -196,7 +210,7 @@ export const getCurrentUserProfile = async (): Promise<User | null> => {
     };
 
   } catch (e) {
-    console.error("Critical Error in getCurrentUserProfile:", e);
+    console.error("Error fatal en getCurrentUserProfile:", e);
     return null;
   }
 };

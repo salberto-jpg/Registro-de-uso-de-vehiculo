@@ -63,51 +63,60 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // --- LÓGICA MAESTRA DE INICIO ---
+  // --- LÓGICA MAESTRA DE INICIO (FAIL-FAST) ---
   useEffect(() => {
       let isMounted = true;
 
-      // 1. Inicialización con Timeout de Seguridad
-      // Esto garantiza que NUNCA se quede pegado en "Cargando..."
       const init = async () => {
-          // Forzar finalización de carga después de 2.5 segundos si la red falla
-          const safetyTimeout = setTimeout(() => {
-              if (isMounted && loading) {
-                  console.warn("Tiempo de carga excedido, mostrando interfaz.");
-                  setLoading(false);
-              }
-          }, 2500);
-
+          console.log("Iniciando aplicación...");
           try {
-              const profile = await getCurrentUserProfile();
+              // RACE CONDITION: Base de datos vs Timeout (3s)
+              // Si la BD no responde en 3 segundos, forzamos la carga como "no logueado"
+              // para que el usuario pueda ver el Login y no se quede esperando.
+              const timeoutPromise = new Promise<null>((resolve) => 
+                  setTimeout(() => {
+                      console.warn("Timeout de carga inicial.");
+                      resolve(null);
+                  }, 3000)
+              );
+
+              const userProfile = await Promise.race([
+                  getCurrentUserProfile(),
+                  timeoutPromise
+              ]);
+
               if (isMounted) {
-                  setUser(profile);
+                  setUser(userProfile);
               }
           } catch (e) {
-              console.error("Error fatal en inicio:", e);
+              console.error("Error en carga inicial:", e);
               if (isMounted) setUser(null);
           } finally {
-              clearTimeout(safetyTimeout);
               if (isMounted) setLoading(false);
           }
       };
 
       init();
 
-      // 2. Suscripción a eventos de Supabase (Login/Logout en otras pestañas o ventanas)
-      const { data: { subscription } } = subscribeToAuthChanges((event, session) => {
+      // Suscripción segura a cambios de sesión
+      const sub = subscribeToAuthChanges((event, session) => {
           if (!isMounted) return;
+          console.log("Evento Auth:", event);
           
           if (event === 'SIGNED_OUT') {
               setUser(null);
               setLoading(false);
           } else if (event === 'SIGNED_IN') {
-              // Solo recargar si no tenemos usuario, para evitar parpadeos
-              if (!user) {
+               // Si entra, intentamos recargar el perfil
+               if (!user) {
+                   setLoading(true);
                    getCurrentUserProfile().then(u => {
-                       if (isMounted) setUser(u);
+                       if (isMounted) {
+                           setUser(u);
+                           setLoading(false);
+                       }
                    });
-              }
+               }
           } else if (event === 'PASSWORD_RECOVERY') {
               setIsRecovery(true);
           }
@@ -115,7 +124,9 @@ const App: React.FC = () => {
 
       return () => {
           isMounted = false;
-          subscription.unsubscribe();
+          if (sub && sub.data && sub.data.subscription) {
+              sub.data.subscription.unsubscribe();
+          }
       };
   }, []);
 
@@ -160,7 +171,14 @@ const App: React.FC = () => {
       return (
           <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 text-gray-600 gap-4">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-indigo-600"></div>
-              <p className="font-medium text-sm animate-pulse">Iniciando sistema...</p>
+              <p className="font-medium text-sm animate-pulse">Cargando sistema...</p>
+              {/* Botón de escape por si acaso */}
+              <button 
+                  onClick={() => { signOut(); window.location.reload(); }}
+                  className="mt-8 text-xs text-gray-400 hover:text-red-500 underline"
+              >
+                  ¿Tarda mucho? Reiniciar
+              </button>
           </div>
       );
   }
