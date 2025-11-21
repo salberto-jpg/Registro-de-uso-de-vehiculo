@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import { Login } from './pages/Login';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { DriverView } from './pages/DriverView';
 import { User, UserRole } from './types';
-import { subscribeToAuthChanges, getCurrentUserProfile, updateUserPassword } from './services/db';
+import { subscribeToAuthChanges, getCurrentUserProfile, updateUserPassword, signOut } from './services/db';
 import { QrScanner } from './components/QrScanner';
 
 const UpdatePasswordView: React.FC<{ onUpdated: () => void }> = ({ onUpdated }) => {
@@ -87,11 +86,19 @@ const App: React.FC = () => {
       });
       
       // Carga inicial del perfil
-      getCurrentUserProfile().then(u => {
-          if (u) setUser(u);
+      getCurrentUserProfile().then(async (u) => {
+          if (u) {
+              setUser(u);
+          } else {
+              // FIX CRITICO: Si no pudimos cargar el perfil (por error de red o conflicto),
+              // pero había una sesión "latente", cerramos sesión para limpiar el estado corrupto.
+              // Esto evita que el usuario se quede en el limbo.
+              await signOut();
+          }
       })
       .catch(err => {
           console.error("Error en carga inicial de usuario:", err);
+          signOut(); // Asegurar limpieza en caso de error
       })
       .finally(() => {
           clearTimeout(safetyTimeout); // Cancelar el temporizador si cargó bien
@@ -146,6 +153,7 @@ const App: React.FC = () => {
               <div className="flex flex-col items-center gap-4">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
                   <p className="text-gray-600 font-medium animate-pulse">Iniciando Sistema...</p>
+                  <p className="text-xs text-gray-400">Verificando conexión segura...</p>
               </div>
           </div>
       );
