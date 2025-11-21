@@ -70,18 +70,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         if (redirectTo) {
            setTimeout(() => {
                const currentHost = window.location.host;
-               // Solo mostrar advertencia si se está desarrollando en local
-               if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                   setMsg(prev => 
-                     prev + `\n\n⚠️ IMPORTANTE (Modo Prueba):` +
-                     `\nSupabase probablemente envíe un enlace a "localhost" que dará error.` +
-                     `\n\nSI VES UN ERROR DE CONEXIÓN:` +
-                     `\n1. Copia el enlace del error o del correo.` +
-                     `\n2. Pégalo en el navegador.` +
-                     `\n3. Reemplaza "localhost:3000" por la dirección actual de esta página:` +
-                     `\n${currentHost}`
-                   );
-               }
+               setMsg(prev => 
+                 prev + `\n\n⚠️ IMPORTANTE (Modo Prueba):` +
+                 `\nSupabase probablemente envíe un enlace a "localhost" que dará error.` +
+                 `\n\nSI VES UN ERROR DE CONEXIÓN:` +
+                 `\n1. Copia el enlace del error o del correo.` +
+                 `\n2. Pégalo en el navegador.` +
+                 `\n3. Reemplaza "localhost:3000" por la dirección actual de esta página:` +
+                 `\n${currentHost}`
+               );
            }, 1000);
         }
       }

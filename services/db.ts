@@ -256,8 +256,7 @@ export const adminCreateUser = async (newUser: Omit<User, 'id'>, password?: stri
                 data: {
                     name: newUser.name,
                     role: newUser.role
-                },
-                emailRedirectTo: window.location.origin // Forzar URL actual (Vercel/Localhost)
+                }
             }
         });
 
@@ -440,16 +439,8 @@ export const getAllLogs = async (): Promise<VehicleLog[]> => {
 export const getActiveLog = async (vehicleId: string): Promise<VehicleLog | undefined> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
-    // Use .limit(1) and .order() instead of .single() to be robust against duplicate dirty data
-    const { data } = await supabase
-        .from('logs')
-        .select('*')
-        .eq('vehicle_id', vehicleId)
-        .is('end_time', null)
-        .order('start_time', { ascending: false })
-        .limit(1);
-        
-    if (data && data.length > 0) return transformLog(data[0]);
+    const { data } = await supabase.from('logs').select('*').eq('vehicle_id', vehicleId).is('end_time', null).single();
+    if (data) return transformLog(data);
     return undefined;
   }
   const db = loadMockDB();
@@ -459,16 +450,8 @@ export const getActiveLog = async (vehicleId: string): Promise<VehicleLog | unde
 export const getUserActiveTrip = async (userId: string): Promise<VehicleLog | undefined> => {
     const supabase = getSupabaseClient();
     if (isSupabaseConfigured() && supabase) {
-        // Use .limit(1) to prevent crashes if user has multiple active logs (error state)
-        const { data } = await supabase
-            .from('logs')
-            .select('*')
-            .eq('driver_id', userId)
-            .is('end_time', null)
-            .order('start_time', { ascending: false })
-            .limit(1);
-            
-        if (data && data.length > 0) return transformLog(data[0]);
+        const { data } = await supabase.from('logs').select('*').eq('driver_id', userId).is('end_time', null).single();
+        if (data) return transformLog(data);
         return undefined;
     }
     const db = loadMockDB();
@@ -481,38 +464,6 @@ export const startTrip = async (vehicleId: string, user: User): Promise<void> =>
     const v = await getVehicle(vehicleId);
     if (!v) throw new Error('Vehicle not found');
 
-    // --- CRITICAL FIX for FK Error ---
-    // Ensure the profile exists in the DB before inserting the log.
-    // This handles cases where the auth user exists but profiles row is missing.
-    const { error: profileError } = await supabase.from('profiles').upsert({
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role
-    });
-    
-    if (profileError) {
-        console.warn("Profile check warning:", profileError.message);
-    }
-
-    // AUTO-HEALING: Close any existing active logs for this vehicle to prevent duplicates
-    // This handles the case where a previous "Return" failed or for "Driver Swaps"
-    const { data: existingLogs } = await supabase
-        .from('logs')
-        .select('id')
-        .eq('vehicle_id', vehicleId)
-        .is('end_time', null);
-
-    if (existingLogs && existingLogs.length > 0) {
-        console.log("Auto-closing previous active logs for vehicle:", vehicleId);
-        await supabase.from('logs').update({
-            end_time: new Date().toISOString(),
-            end_mileage: v.currentMileage, // Assume no mileage change for forced close
-            notes: 'Cierre automático por inicio de nuevo viaje'
-        }).eq('vehicle_id', vehicleId).is('end_time', null);
-    }
-
-    // Create new log
     const { error: logError } = await supabase.from('logs').insert({
       vehicle_id: vehicleId,
       driver_id: user.id,
@@ -560,7 +511,6 @@ export const endTrip = async (vehicleId: string): Promise<void> => {
     const v = await getVehicle(vehicleId);
     if (!v) throw new Error('Vehicle not found');
 
-    // In production, this would be user input. Here we simulate a short trip.
     const endMileage = activeLog.startMileage + Math.floor(Math.random() * 50) + 1; 
     
     const { error } = await supabase.from('logs').update({
