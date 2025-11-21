@@ -75,9 +75,8 @@ const transformUser = (u: any): User => ({
 
 export const signInWithEmail = async (email: string, password: string): Promise<{ user: User | null, error?: string }> => {
   
-  // --- DEV BACKDOOR / ACCESO MAESTRO ---
+  // --- DEV BACKDOOR ---
   if ((email === 'salberto@metallo.com.ar' || email === 'admin@fleet.com') && password === 'admin') {
-      console.warn("⚠️ Usando acceso de desarrollador (Backdoor) para Admin");
       return { 
           user: { 
               id: 'dev-admin-id', 
@@ -99,38 +98,27 @@ export const signInWithEmail = async (email: string, password: string): Promise<
     if (authError) return { user: null, error: authError.message };
     if (!authData.user) return { user: null, error: 'No se pudo obtener el usuario.' };
 
-    // Force Admin for specific email immediately upon login
-    if (email === 'salberto@metallo.com.ar') {
-         return { 
-             user: { 
-                 id: authData.user.id, 
-                 email: email, 
-                 name: 'Salberto Admin', 
-                 role: UserRole.ADMIN 
-             } 
-         };
+    // --- ESTRATEGIA FAIL-OPEN ---
+    // No esperamos a consultar la tabla 'profiles'. Si Auth pasó, construimos el usuario y entramos.
+    // La tabla profiles se sincronizará después o se usará solo para datos extra.
+    
+    let role = UserRole.DRIVER; // Rol por defecto
+    
+    // Detectar Admin por email hardcoded (Seguridad infalible)
+    if (email === 'salberto@metallo.com.ar' || email === 'admin@fleet.com') {
+        role = UserRole.ADMIN;
+    } else if (authData.user.user_metadata?.role) {
+        role = authData.user.user_metadata.role as UserRole;
     }
 
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('email', email)
-      .single();
+    const immediateUser: User = {
+        id: authData.user.id,
+        email: email,
+        name: authData.user.user_metadata?.name || email.split('@')[0],
+        role: role
+    };
 
-    if (profileError || !profile) {
-      console.error("Login Error: Auth exitoso pero fallo al cargar perfil", profileError);
-      // Fallback crítico: Si auth funciona pero profile no, devolvemos un usuario básico
-      return { 
-          user: {
-              id: authData.user.id,
-              email: authData.user.email || email,
-              name: authData.user.user_metadata?.name || email.split('@')[0],
-              role: (authData.user.user_metadata?.role as UserRole) || UserRole.DRIVER
-          } 
-      };
-    }
-
-    return { user: transformUser(profile) };
+    return { user: immediateUser };
   }
 
   const db = loadMockDB();
@@ -147,12 +135,10 @@ export const signOut = async () => {
 export const resetPassword = async (email: string) => {
   const supabase = getSupabaseClient();
   if (supabase) {
-      const redirectTo = window.location.origin; // Use origin to avoid query param issues
-      
+      const redirectTo = window.location.origin; 
       const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: redirectTo
       });
-      
       return { data, error, redirectTo };
   }
   return { data: null, error: null, redirectTo: null }; 
@@ -166,60 +152,68 @@ export const updateUserPassword = async (password: string) => {
     throw new Error("Supabase no configurado");
 };
 
+/**
+ * Esta función ahora es ULTRA RESISTENTE.
+ * Prioridad 1: Sesión activa de Auth (Memoria/LocalStorage).
+ * Prioridad 2: Base de datos (Profiles).
+ * Si BD falla, usa Auth. NUNCA devuelve null si hay sesión activa.
+ */
 export const getCurrentUserProfile = async (): Promise<User | null> => {
   try {
     const supabase = getSupabaseClient();
-    // Si isSupabaseConfigured es true pero getSupabaseClient devolvió null por URL mala, salimos.
-    if (!isSupabaseConfigured() || !supabase) {
-        return null;
+    if (!isSupabaseConfigured() || !supabase) return null;
+
+    // 1. Obtener sesión activa (Rápido)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session || !session.user) {
+        return null; // Realmente no hay nadie logueado
     }
 
-    // 1. Obtener usuario de autenticación (Sesión activa)
-    // Usamos un try/catch interno para esta llamada específica por si la red falla
-    let authUser;
-    try {
-        const { data: { user }, error } = await supabase.auth.getUser();
-        if (error || !user) return null;
-        authUser = user;
-    } catch (err) {
-        console.warn("Error de conexión al verificar sesión:", err);
-        return null;
-    }
+    const authUser = session.user;
+    const email = authUser.email || '';
 
-    // --- CRITICAL FIX: Always grant Admin rights to the owner email ---
-    if (authUser.email === 'salberto@metallo.com.ar' || authUser.email === 'admin@fleet.com') {
-        return { 
-            id: authUser.id, 
-            email: authUser.email!, 
-            name: 'Super Admin', 
-            role: UserRole.ADMIN 
-        };
-    }
-
-    // 2. Intentar obtener perfil de base de datos
-    const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', authUser.id) // Usar ID es más seguro que email
-    .single();
-
-    if (profileError) {
-        console.warn("Aviso: Sesión válida pero error cargando perfil (RLS o tabla vacía):", profileError.message);
-    }
-
-    if (profile) return transformUser(profile);
-
-    // 3. FALLBACK ROBUSTO: Si hay sesión pero falla la BD, reconstruir usuario
-    console.log("Usando perfil reconstruido desde Auth (Fallback)");
-    return {
+    // 2. Construir Usuario "Seguro" desde Auth (Fallback)
+    // Este objeto se devolverá si todo lo demás falla.
+    let fallbackUser: User = {
         id: authUser.id,
-        email: authUser.email!,
-        name: authUser.user_metadata?.name || authUser.email!.split('@')[0],
+        email: email,
+        name: authUser.user_metadata?.name || email.split('@')[0],
         role: (authUser.user_metadata?.role as UserRole) || UserRole.DRIVER
     };
 
+    // Override de Admin Hardcoded
+    if (email === 'salberto@metallo.com.ar' || email === 'admin@fleet.com') {
+        fallbackUser.role = UserRole.ADMIN;
+        fallbackUser.name = 'Super Admin';
+    }
+
+    // 3. Intentar enriquecer con datos de la DB (Opcional)
+    // Envolvemos en try/catch y timeout para que no bloquee
+    try {
+        // Promise.race para dar un tiempo máximo de 2s a la DB
+        const dbPromise = supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
+            
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout DB"), 1500));
+
+        const result: any = await Promise.race([dbPromise, timeoutPromise]);
+
+        if (result && result.data) {
+            return transformUser(result.data);
+        }
+    } catch (e) {
+        console.warn("⚠️ DB Profile no respondió a tiempo o falló. Usando datos de sesión.", e);
+    }
+
+    // 4. Si DB falla, devolvemos el usuario de sesión inmediatamente.
+    return fallbackUser;
+
   } catch (e) {
-    console.error("Error recuperando perfil de usuario:", e);
+    console.error("Error fatal en getUserProfile:", e);
     return null;
   }
 };

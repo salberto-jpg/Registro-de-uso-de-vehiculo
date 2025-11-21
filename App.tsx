@@ -49,6 +49,7 @@ const UpdatePasswordView: React.FC<{ onUpdated: () => void }> = ({ onUpdated }) 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true); 
+  const [longLoad, setLongLoad] = useState(false);
   const [route, setRoute] = useState<string>(window.location.hash);
   const [manualId, setManualId] = useState('');
   
@@ -74,26 +75,23 @@ const App: React.FC = () => {
   useEffect(() => {
       let mounted = true;
 
-      // --- INTERRUPTOR DE SEGURIDAD ---
-      // Si la base de datos tarda más de 2 segundos en responder,
-      // forzamos la pantalla de Login para no bloquear al usuario.
-      const safetyTimeout = setTimeout(() => {
+      // --- TIMER DE AYUDA VISUAL ---
+      // Si tarda más de 3 segundos, mostramos botón de "Forzar Entrada"
+      const helpTimer = setTimeout(() => {
           if (mounted && loading) {
-              console.warn("⚠️ Tiempo de espera agotado en carga. Forzando Login.");
-              setLoading(false);
+              setLongLoad(true);
           }
-      }, 2000);
+      }, 3000);
 
       const initAuth = async () => {
           try {
-              // Intentar obtener perfil (tiene timeout interno en db.ts o falla rápido)
+              // Esta función ahora está optimizada para NO fallar si hay sesión
               const profile = await getCurrentUserProfile();
               
               if (mounted) {
                   if (profile) {
                       setUser(profile);
                   } else {
-                      // Si no hay perfil, nos aseguramos de limpiar el usuario
                       setUser(null);
                   }
               }
@@ -103,33 +101,34 @@ const App: React.FC = () => {
           } finally {
               if (mounted) {
                   setLoading(false);
-                  clearTimeout(safetyTimeout); // Limpiar el timer si cargó bien
               }
           }
       };
 
       initAuth();
 
-      // Suscribirse a eventos pero SIN bloquear la UI
       const { data: { subscription } } = subscribeToAuthChanges(async (event, session) => {
           if (!mounted) return;
 
           if (event === 'PASSWORD_RECOVERY') {
               setIsRecovery(true);
           } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-              if (session?.user && (!user || user.id !== session.user.id)) {
-                   const profile = await getCurrentUserProfile();
-                   if (mounted && profile) setUser(profile);
+              // Si la sesión cambia, intentamos actualizar, pero sin bloquear si ya tenemos user
+              const profile = await getCurrentUserProfile();
+              if (mounted && profile) {
+                   setUser(profile);
+                   setLoading(false); // Asegurar que quite carga
               }
           } else if (event === 'SIGNED_OUT') {
               setUser(null);
               setIsRecovery(false);
+              setLoading(false);
           }
       });
       
       return () => {
           mounted = false;
-          clearTimeout(safetyTimeout);
+          clearTimeout(helpTimer);
           subscription.unsubscribe();
       };
   }, []);
@@ -172,23 +171,35 @@ const App: React.FC = () => {
 
   if (loading) {
       return (
-          <div className="min-h-screen flex items-center justify-center bg-gray-100">
-              <div className="flex flex-col items-center gap-6 p-6 text-center max-w-sm w-full">
+          <div className="min-h-screen flex items-center justify-center bg-gray-100 relative">
+              <div className="flex flex-col items-center gap-6 p-6 text-center max-w-sm w-full z-10">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
                   
                   <div>
-                    <p className="text-gray-800 font-bold text-lg">Iniciando Sistema...</p>
-                    <p className="text-xs text-gray-500 mt-1">Verificando credenciales...</p>
+                    <p className="text-gray-800 font-bold text-lg">Cargando Perfil...</p>
+                    <p className="text-xs text-gray-500 mt-1">Validando sesión segura</p>
                   </div>
                   
-                  <div className="mt-4">
-                        <button 
-                            onClick={() => setLoading(false)}
-                            className="px-4 py-2 bg-indigo-50 text-indigo-600 text-sm rounded border border-indigo-100 hover:bg-indigo-100 transition-colors"
-                        >
-                            Saltar espera
-                        </button>
-                  </div>
+                  {/* Botón de escape manual si tarda mucho */}
+                  {longLoad && (
+                      <div className="mt-4 animate-fade-in">
+                        <p className="text-xs text-red-500 mb-2">¿Está tardando mucho?</p>
+                        <div className="flex flex-col gap-2">
+                            <button 
+                                onClick={() => setLoading(false)}
+                                className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded shadow hover:bg-indigo-700 transition-colors"
+                            >
+                                🚀 FORZAR ENTRADA
+                            </button>
+                            <button 
+                                onClick={handleEmergencyReset}
+                                className="px-4 py-2 text-gray-400 text-xs underline hover:text-gray-600"
+                            >
+                                Cerrar Sesión y Recargar
+                            </button>
+                        </div>
+                      </div>
+                  )}
               </div>
           </div>
       );
