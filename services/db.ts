@@ -169,50 +169,59 @@ export const updateUserPassword = async (password: string) => {
 export const getCurrentUserProfile = async (): Promise<User | null> => {
   try {
     const supabase = getSupabaseClient();
-    if (isSupabaseConfigured() && supabase) {
-      // 1. Obtener usuario de autenticación (Sesión activa)
-      const { data: { user }, error } = await supabase.auth.getUser();
-      
-      if (error || !user) return null;
-
-      // --- CRITICAL FIX: Always grant Admin rights to the owner email ---
-      if (user.email === 'salberto@metallo.com.ar' || user.email === 'admin@fleet.com') {
-          return { 
-              id: user.id, 
-              email: user.email!, 
-              name: 'Super Admin', 
-              role: UserRole.ADMIN 
-          };
-      }
-
-      // 2. Intentar obtener perfil de base de datos
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id) // Usar ID es más seguro que email
-        .single();
-
-      if (profileError) {
-          console.warn("Aviso: Sesión válida pero error cargando perfil (RLS o tabla vacía):", profileError.message);
-      }
-
-      if (profile) return transformUser(profile);
-
-      // 3. FALLBACK ROBUSTO: Si hay sesión pero falla la BD, reconstruir usuario
-      // Esto evita que la app se quede en "Cargando" si la tabla profiles falla
-      console.log("Usando perfil reconstruido desde Auth (Fallback)");
-      return {
-          id: user.id,
-          email: user.email!,
-          name: user.user_metadata?.name || user.email!.split('@')[0],
-          role: (user.user_metadata?.role as UserRole) || UserRole.DRIVER
-      };
+    // Si isSupabaseConfigured es true pero getSupabaseClient devolvió null por URL mala, salimos.
+    if (!isSupabaseConfigured() || !supabase) {
+        return null;
     }
+
+    // 1. Obtener usuario de autenticación (Sesión activa)
+    // Usamos un try/catch interno para esta llamada específica por si la red falla
+    let authUser;
+    try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error || !user) return null;
+        authUser = user;
+    } catch (err) {
+        console.warn("Error de conexión al verificar sesión:", err);
+        return null;
+    }
+
+    // --- CRITICAL FIX: Always grant Admin rights to the owner email ---
+    if (authUser.email === 'salberto@metallo.com.ar' || authUser.email === 'admin@fleet.com') {
+        return { 
+            id: authUser.id, 
+            email: authUser.email!, 
+            name: 'Super Admin', 
+            role: UserRole.ADMIN 
+        };
+    }
+
+    // 2. Intentar obtener perfil de base de datos
+    const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', authUser.id) // Usar ID es más seguro que email
+    .single();
+
+    if (profileError) {
+        console.warn("Aviso: Sesión válida pero error cargando perfil (RLS o tabla vacía):", profileError.message);
+    }
+
+    if (profile) return transformUser(profile);
+
+    // 3. FALLBACK ROBUSTO: Si hay sesión pero falla la BD, reconstruir usuario
+    console.log("Usando perfil reconstruido desde Auth (Fallback)");
+    return {
+        id: authUser.id,
+        email: authUser.email!,
+        name: authUser.user_metadata?.name || authUser.email!.split('@')[0],
+        role: (authUser.user_metadata?.role as UserRole) || UserRole.DRIVER
+    };
+
   } catch (e) {
     console.error("Error recuperando perfil de usuario:", e);
     return null;
   }
-  return null;
 };
 
 export const subscribeToAuthChanges = (callback: (event: string, session: any) => void) => {

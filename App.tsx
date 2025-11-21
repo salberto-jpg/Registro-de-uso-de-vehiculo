@@ -48,7 +48,7 @@ const UpdatePasswordView: React.FC<{ onUpdated: () => void }> = ({ onUpdated }) 
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true); // Estado de carga inicial
+  const [loading, setLoading] = useState(true); 
   const [route, setRoute] = useState<string>(window.location.hash);
   const [manualId, setManualId] = useState('');
   
@@ -66,7 +66,7 @@ const App: React.FC = () => {
   const handleEmergencyReset = async () => {
       setLoading(true);
       await signOut();
-      localStorage.clear(); // Borra todo rastro de sesiones corruptas
+      localStorage.clear(); 
       sessionStorage.clear();
       window.location.reload();
   };
@@ -74,38 +74,50 @@ const App: React.FC = () => {
   useEffect(() => {
       let mounted = true;
 
+      // --- INTERRUPTOR DE SEGURIDAD ---
+      // Si la base de datos tarda más de 2 segundos en responder,
+      // forzamos la pantalla de Login para no bloquear al usuario.
+      const safetyTimeout = setTimeout(() => {
+          if (mounted && loading) {
+              console.warn("⚠️ Tiempo de espera agotado en carga. Forzando Login.");
+              setLoading(false);
+          }
+      }, 2000);
+
       const initAuth = async () => {
           try {
-              // 1. Intentar obtener perfil
+              // Intentar obtener perfil (tiene timeout interno en db.ts o falla rápido)
               const profile = await getCurrentUserProfile();
               
               if (mounted) {
                   if (profile) {
                       setUser(profile);
                   } else {
+                      // Si no hay perfil, nos aseguramos de limpiar el usuario
                       setUser(null);
                   }
               }
           } catch (e) {
-              console.error("Error en inicialización:", e);
+              console.error("Error crítico en inicialización:", e);
+              if (mounted) setUser(null);
           } finally {
-              if (mounted) setLoading(false);
+              if (mounted) {
+                  setLoading(false);
+                  clearTimeout(safetyTimeout); // Limpiar el timer si cargó bien
+              }
           }
       };
 
-      // Ejecutar carga inicial
       initAuth();
 
-      // Suscribirse a eventos (Login/Logout en tiempo real)
+      // Suscribirse a eventos pero SIN bloquear la UI
       const { data: { subscription } } = subscribeToAuthChanges(async (event, session) => {
           if (!mounted) return;
 
           if (event === 'PASSWORD_RECOVERY') {
               setIsRecovery(true);
           } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-              // Solo buscamos perfil si el usuario no está seteado o si cambió
               if (session?.user && (!user || user.id !== session.user.id)) {
-                   // Pequeño delay para evitar race conditions con initAuth
                    const profile = await getCurrentUserProfile();
                    if (mounted && profile) setUser(profile);
               }
@@ -117,6 +129,7 @@ const App: React.FC = () => {
       
       return () => {
           mounted = false;
+          clearTimeout(safetyTimeout);
           subscription.unsubscribe();
       };
   }, []);
@@ -165,16 +178,15 @@ const App: React.FC = () => {
                   
                   <div>
                     <p className="text-gray-800 font-bold text-lg">Iniciando Sistema...</p>
-                    <p className="text-xs text-gray-500 mt-1">Sincronizando datos...</p>
+                    <p className="text-xs text-gray-500 mt-1">Verificando credenciales...</p>
                   </div>
                   
-                  {/* Botón de emergencia después de 5 segundos por si acaso */}
-                  <div className="mt-4 animate-pulse delay-1000">
+                  <div className="mt-4">
                         <button 
-                            onClick={handleEmergencyReset}
-                            className="text-xs text-red-500 underline hover:text-red-700"
+                            onClick={() => setLoading(false)}
+                            className="px-4 py-2 bg-indigo-50 text-indigo-600 text-sm rounded border border-indigo-100 hover:bg-indigo-100 transition-colors"
                         >
-                            ¿Tarda demasiado? Reiniciar App
+                            Saltar espera
                         </button>
                   </div>
               </div>
@@ -244,7 +256,7 @@ const App: React.FC = () => {
                             type="text" 
                             placeholder="ID del Vehículo (ej. v1)" 
                             value={manualId} 
-                            onChange={(e) => setManualId(e.target.value)} 
+                            onChange={e => setManualId(e.target.value)} 
                             className="flex-1 bg-[#0f1115] border border-gray-700 text-white rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none placeholder-gray-600 font-medium transition-all" 
                         />
                         <button 
