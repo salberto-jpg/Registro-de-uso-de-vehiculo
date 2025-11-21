@@ -130,6 +130,8 @@ export const signInWithEmail = async (email: string, password: string): Promise<
 export const signOut = async () => {
   const supabase = getSupabaseClient();
   if (supabase) await supabase.auth.signOut();
+  // Limpieza profunda al salir
+  localStorage.removeItem('sb-' + getSupabaseConfig().url?.split('//')[1].split('.')[0] + '-auth-token');
 };
 
 export const resetPassword = async (email: string) => {
@@ -153,28 +155,55 @@ export const updateUserPassword = async (password: string) => {
 };
 
 /**
- * Esta función ahora es ULTRA RESISTENTE.
- * Prioridad 1: Sesión activa de Auth (Memoria/LocalStorage).
- * Prioridad 2: Base de datos (Profiles).
- * Si BD falla, usa Auth. NUNCA devuelve null si hay sesión activa.
+ * Esta función ahora incluye AUTOCURACIÓN DE CACHÉ.
+ * 1. Obtiene sesión local.
+ * 2. Intenta validar el token con el servidor (getUser).
+ * 3. Si el token es inválido (401), BORRA LA SESIÓN y retorna null.
+ * 4. Si la red falla, usa la sesión local (Offline).
  */
 export const getCurrentUserProfile = async (): Promise<User | null> => {
   try {
     const supabase = getSupabaseClient();
     if (!isSupabaseConfigured() || !supabase) return null;
 
-    // 1. Obtener sesión activa (Rápido)
+    // 1. Obtener sesión activa local (Rápido)
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
     if (sessionError || !session || !session.user) {
-        return null; // Realmente no hay nadie logueado
+        return null; // No hay sesión local
     }
 
-    const authUser = session.user;
+    let authUser = session.user;
     const email = authUser.email || '';
 
-    // 2. Construir Usuario "Seguro" desde Auth (Fallback)
-    // Este objeto se devolverá si todo lo demás falla.
+    // 2. VALIDACIÓN DE SALUD DE TOKEN (Crucial para evitar bucle de carga)
+    try {
+        // Intentamos conectar con el servidor para verificar que el token no haya expirado
+        // Usamos Promise.race para no bloquear si hay mala conexión
+        const validationPromise = supabase.auth.getUser();
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout Auth"), 2000));
+        
+        const { data: refreshData, error: refreshError } : any = await Promise.race([validationPromise, timeoutPromise]);
+        
+        if (refreshError) {
+            // Si el error es explícitamente de credenciales inválidas (401)
+            if (refreshError.status === 401 || refreshError.code === 'bad_jwt' || refreshError.message?.includes('invalid claim')) {
+                console.error("🚨 Token corrupto o expirado detectado. Limpiando sesión para autocuración.");
+                await supabase.auth.signOut();
+                return null; // Esto forzará al usuario al Login y arreglará el problema "segunda vez"
+            }
+            // Si es otro error (timeout, red), asumimos modo Offline y seguimos.
+            console.warn("⚠️ Validación online falló, usando caché local:", refreshError.message);
+        } else if (refreshData?.user) {
+            // Si tenemos datos frescos del servidor, los usamos
+            authUser = refreshData.user;
+        }
+    } catch (e) {
+        // Timeout de red, seguimos con lo que tenemos en caché
+        console.log("ℹ️ Modo Offline / Red lenta detectada. Usando sesión local.");
+    }
+
+    // 3. Construir Usuario "Seguro" (Fallback)
     let fallbackUser: User = {
         id: authUser.id,
         email: email,
@@ -188,28 +217,25 @@ export const getCurrentUserProfile = async (): Promise<User | null> => {
         fallbackUser.name = 'Super Admin';
     }
 
-    // 3. Intentar enriquecer con datos de la DB (Opcional)
-    // Envolvemos en try/catch y timeout para que no bloquee
+    // 4. Intentar enriquecer con datos de la DB (Opcional)
     try {
-        // Promise.race para dar un tiempo máximo de 2s a la DB
         const dbPromise = supabase
             .from('profiles')
             .select('*')
             .eq('id', authUser.id)
             .single();
             
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout DB"), 1500));
-
-        const result: any = await Promise.race([dbPromise, timeoutPromise]);
+        const timeoutDbPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout DB"), 1500));
+        const result: any = await Promise.race([dbPromise, timeoutDbPromise]);
 
         if (result && result.data) {
             return transformUser(result.data);
         }
     } catch (e) {
-        console.warn("⚠️ DB Profile no respondió a tiempo o falló. Usando datos de sesión.", e);
+        console.warn("⚠️ DB Profile no respondió a tiempo. Usando datos básicos.");
     }
 
-    // 4. Si DB falla, devolvemos el usuario de sesión inmediatamente.
+    // 5. Retornar usuario (Si llegamos aquí, es seguro entrar)
     return fallbackUser;
 
   } catch (e) {

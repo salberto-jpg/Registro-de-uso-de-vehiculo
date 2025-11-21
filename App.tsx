@@ -64,11 +64,15 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const handleEmergencyReset = async () => {
+  const handleClearCache = () => {
       setLoading(true);
-      await signOut();
-      localStorage.clear(); 
+      console.log("Limpiando caché y reiniciando...");
+      localStorage.clear();
       sessionStorage.clear();
+      // Eliminar cookies si es posible (aunque JS tiene acceso limitado a HttpOnly cookies)
+      document.cookie.split(";").forEach((c) => {
+          document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
       window.location.reload();
   };
 
@@ -76,7 +80,7 @@ const App: React.FC = () => {
       let mounted = true;
 
       // --- TIMER DE AYUDA VISUAL ---
-      // Si tarda más de 3 segundos, mostramos botón de "Forzar Entrada"
+      // Si tarda más de 3 segundos, mostramos opciones de reparación
       const helpTimer = setTimeout(() => {
           if (mounted && loading) {
               setLongLoad(true);
@@ -85,7 +89,7 @@ const App: React.FC = () => {
 
       const initAuth = async () => {
           try {
-              // Esta función ahora está optimizada para NO fallar si hay sesión
+              // Esta función ahora incluye lógica de autocuración de caché
               const profile = await getCurrentUserProfile();
               
               if (mounted) {
@@ -113,11 +117,11 @@ const App: React.FC = () => {
           if (event === 'PASSWORD_RECOVERY') {
               setIsRecovery(true);
           } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-              // Si la sesión cambia, intentamos actualizar, pero sin bloquear si ya tenemos user
+              // Si la sesión cambia, intentamos actualizar
               const profile = await getCurrentUserProfile();
               if (mounted && profile) {
                    setUser(profile);
-                   setLoading(false); // Asegurar que quite carga
+                   setLoading(false); 
               }
           } else if (event === 'SIGNED_OUT') {
               setUser(null);
@@ -176,28 +180,33 @@ const App: React.FC = () => {
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
                   
                   <div>
-                    <p className="text-gray-800 font-bold text-lg">Cargando Perfil...</p>
-                    <p className="text-xs text-gray-500 mt-1">Validando sesión segura</p>
+                    <p className="text-gray-800 font-bold text-lg">Iniciando Sistema...</p>
+                    <p className="text-xs text-gray-500 mt-1">Verificando sesión segura</p>
                   </div>
                   
-                  {/* Botón de escape manual si tarda mucho */}
+                  {/* Botones de recuperación si tarda mucho */}
                   {longLoad && (
-                      <div className="mt-4 animate-fade-in">
-                        <p className="text-xs text-red-500 mb-2">¿Está tardando mucho?</p>
-                        <div className="flex flex-col gap-2">
-                            <button 
-                                onClick={() => setLoading(false)}
-                                className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded shadow hover:bg-indigo-700 transition-colors"
-                            >
-                                🚀 FORZAR ENTRADA
-                            </button>
-                            <button 
-                                onClick={handleEmergencyReset}
-                                className="px-4 py-2 text-gray-400 text-xs underline hover:text-gray-600"
-                            >
-                                Cerrar Sesión y Recargar
-                            </button>
+                      <div className="mt-4 animate-fade-in flex flex-col gap-3 w-full">
+                        <div className="bg-yellow-50 border border-yellow-200 p-3 rounded text-xs text-yellow-800 mb-2">
+                            ¿Tarda demasiado? Es posible que tu sesión haya caducado.
                         </div>
+                        <button 
+                            onClick={() => setLoading(false)}
+                            className="w-full px-4 py-3 bg-indigo-600 text-white text-sm font-bold rounded-lg shadow hover:bg-indigo-700 transition-colors"
+                        >
+                            🚀 FORZAR ENTRADA AHORA
+                        </button>
+                        
+                        <button 
+                            onClick={handleClearCache}
+                            className="w-full px-4 py-3 bg-red-100 text-red-700 text-sm font-bold rounded-lg shadow hover:bg-red-200 transition-colors border border-red-300 flex items-center justify-center gap-2"
+                        >
+                            <span>🗑️</span> BORRAR CACHÉ Y REINICIAR
+                        </button>
+                        
+                        <p className="text-[10px] text-gray-400 text-center mt-1">
+                            Usa "Borrar Caché" si el problema persiste.
+                        </p>
                       </div>
                   )}
               </div>
@@ -240,7 +249,11 @@ const App: React.FC = () => {
             </div>
             
             <button 
-                onClick={() => { setUser(null); signOut(); }} 
+                onClick={async () => { 
+                    setUser(null); 
+                    await signOut(); 
+                    window.location.reload(); 
+                }} 
                 className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs font-semibold px-4 py-2 rounded-full transition-all active:scale-95 backdrop-blur-md"
             >
                 Salir
@@ -284,7 +297,7 @@ const App: React.FC = () => {
           <footer className="p-4 pb-8 text-center">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5">
                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                  <span className="text-[10px] font-medium text-gray-400">Sistema Operativo v1.0.5</span>
+                  <span className="text-[10px] font-medium text-gray-400">Sistema Operativo v1.0.6</span>
               </div>
           </footer>
       </div>
