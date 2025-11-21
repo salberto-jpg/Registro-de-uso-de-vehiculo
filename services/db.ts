@@ -119,7 +119,15 @@ export const signInWithEmail = async (email: string, password: string): Promise<
 
     if (profileError || !profile) {
       console.error("Login Error: Auth exitoso pero fallo al cargar perfil", profileError);
-      return { user: null, error: 'Usuario autenticado pero no tiene perfil asignado. Contacte al admin.' };
+      // Fallback crítico: Si auth funciona pero profile no, devolvemos un usuario básico
+      return { 
+          user: {
+              id: authData.user.id,
+              email: authData.user.email || email,
+              name: authData.user.user_metadata?.name || email.split('@')[0],
+              role: (authData.user.user_metadata?.role as UserRole) || UserRole.DRIVER
+          } 
+      };
     }
 
     return { user: transformUser(profile) };
@@ -162,11 +170,12 @@ export const getCurrentUserProfile = async (): Promise<User | null> => {
   try {
     const supabase = getSupabaseClient();
     if (isSupabaseConfigured() && supabase) {
+      // 1. Obtener usuario de autenticación (Sesión activa)
       const { data: { user }, error } = await supabase.auth.getUser();
+      
       if (error || !user) return null;
 
       // --- CRITICAL FIX: Always grant Admin rights to the owner email ---
-      // This prevents lockout if the profiles table is wiped or RLS fails.
       if (user.email === 'salberto@metallo.com.ar' || user.email === 'admin@fleet.com') {
           return { 
               id: user.id, 
@@ -176,17 +185,28 @@ export const getCurrentUserProfile = async (): Promise<User | null> => {
           };
       }
 
+      // 2. Intentar obtener perfil de base de datos
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('email', user.email)
+        .eq('id', user.id) // Usar ID es más seguro que email
         .single();
 
       if (profileError) {
-          console.warn("Error cargando perfil (puede ser RLS o tabla vacía):", profileError.message);
+          console.warn("Aviso: Sesión válida pero error cargando perfil (RLS o tabla vacía):", profileError.message);
       }
 
       if (profile) return transformUser(profile);
+
+      // 3. FALLBACK ROBUSTO: Si hay sesión pero falla la BD, reconstruir usuario
+      // Esto evita que la app se quede en "Cargando" si la tabla profiles falla
+      console.log("Usando perfil reconstruido desde Auth (Fallback)");
+      return {
+          id: user.id,
+          email: user.email!,
+          name: user.user_metadata?.name || user.email!.split('@')[0],
+          role: (user.user_metadata?.role as UserRole) || UserRole.DRIVER
+      };
     }
   } catch (e) {
     console.error("Error recuperando perfil de usuario:", e);

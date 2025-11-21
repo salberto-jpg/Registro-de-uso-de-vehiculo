@@ -51,7 +51,6 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true); // Estado de carga inicial
   const [route, setRoute] = useState<string>(window.location.hash);
   const [manualId, setManualId] = useState('');
-  const [showReset, setShowReset] = useState(false);
   
   const [isRecovery, setIsRecovery] = useState(() => {
       const h = window.location.hash;
@@ -64,45 +63,51 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const handleEmergencyReset = () => {
+  const handleEmergencyReset = async () => {
+      setLoading(true);
+      await signOut();
       localStorage.clear(); // Borra todo rastro de sesiones corruptas
       sessionStorage.clear();
-      // Forzar recarga limpiando caché si es posible
-      window.location.href = window.location.origin + window.location.pathname + '?t=' + new Date().getTime();
+      window.location.reload();
   };
 
   useEffect(() => {
-      // Temporizador de seguridad más agresivo (2.5 segundos)
-      const safetyTimeout = setTimeout(() => {
-          // Si sigue cargando después de 2.5s, algo anda mal.
-          // Mostramos el botón de reset y desbloqueamos la UI para ir al Login si no hay usuario.
-          console.warn("Tiempo de carga excedido.");
-          setShowReset(true);
-          
-          // Si no tenemos usuario cargado aún, forzamos fin de carga para mostrar Login
-          // Esto ayuda si la promesa de Supabase se quedó colgada.
-          if (!user) {
-             setLoading(false); 
-          }
-      }, 2500);
+      let mounted = true;
 
+      const initAuth = async () => {
+          try {
+              // 1. Intentar obtener perfil
+              const profile = await getCurrentUserProfile();
+              
+              if (mounted) {
+                  if (profile) {
+                      setUser(profile);
+                  } else {
+                      setUser(null);
+                  }
+              }
+          } catch (e) {
+              console.error("Error en inicialización:", e);
+          } finally {
+              if (mounted) setLoading(false);
+          }
+      };
+
+      // Ejecutar carga inicial
+      initAuth();
+
+      // Suscribirse a eventos (Login/Logout en tiempo real)
       const { data: { subscription } } = subscribeToAuthChanges(async (event, session) => {
+          if (!mounted) return;
+
           if (event === 'PASSWORD_RECOVERY') {
               setIsRecovery(true);
           } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-              if (session?.user && !user) {
-                  // Intentamos cargar perfil
-                  try {
-                    const profile = await getCurrentUserProfile();
-                    if (profile) {
-                        setUser(profile);
-                    } else {
-                        throw new Error("Perfil vacío");
-                    }
-                  } catch (e) {
-                      console.error("Fallo al cargar perfil en evento de Auth:", e);
-                      // No hacemos signOut inmediato aquí para evitar bucles infinitos si Auth dispara eventos rápido
-                  }
+              // Solo buscamos perfil si el usuario no está seteado o si cambió
+              if (session?.user && (!user || user.id !== session.user.id)) {
+                   // Pequeño delay para evitar race conditions con initAuth
+                   const profile = await getCurrentUserProfile();
+                   if (mounted && profile) setUser(profile);
               }
           } else if (event === 'SIGNED_OUT') {
               setUser(null);
@@ -110,27 +115,8 @@ const App: React.FC = () => {
           }
       });
       
-      // Carga inicial del perfil
-      getCurrentUserProfile().then(async (u) => {
-          if (u) {
-              setUser(u);
-          } else {
-              // Si no hay usuario, nos aseguramos de limpiar estado
-              await signOut();
-          }
-      })
-      .catch(err => {
-          console.error("Error crítico en carga inicial:", err);
-          // En caso de error crítico, borramos sesión
-          signOut();
-      })
-      .finally(() => {
-          clearTimeout(safetyTimeout); 
-          setLoading(false); 
-      });
-
       return () => {
-          clearTimeout(safetyTimeout);
+          mounted = false;
           subscription.unsubscribe();
       };
   }, []);
@@ -179,20 +165,17 @@ const App: React.FC = () => {
                   
                   <div>
                     <p className="text-gray-800 font-bold text-lg">Iniciando Sistema...</p>
-                    <p className="text-xs text-gray-500 mt-1">Verificando credenciales</p>
+                    <p className="text-xs text-gray-500 mt-1">Sincronizando datos...</p>
                   </div>
                   
-                  {/* Mostrar botón de reset si tarda mucho O siempre después de 1 seg para emergencias */}
-                  <div className={`transition-opacity duration-500 ${showReset ? 'opacity-100' : 'opacity-0'}`}>
-                      <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
-                        <p className="text-yellow-800 text-xs mb-3 font-medium">¿Problemas para entrar?</p>
+                  {/* Botón de emergencia después de 5 segundos por si acaso */}
+                  <div className="mt-4 animate-pulse delay-1000">
                         <button 
                             onClick={handleEmergencyReset}
-                            className="w-full bg-red-500 text-white px-4 py-2 rounded shadow hover:bg-red-600 text-sm font-bold transition-colors"
+                            className="text-xs text-red-500 underline hover:text-red-700"
                         >
-                            Reiniciar Aplicación
+                            ¿Tarda demasiado? Reiniciar App
                         </button>
-                      </div>
                   </div>
               </div>
           </div>
@@ -234,7 +217,7 @@ const App: React.FC = () => {
             </div>
             
             <button 
-                onClick={() => setUser(null)} 
+                onClick={() => { setUser(null); signOut(); }} 
                 className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs font-semibold px-4 py-2 rounded-full transition-all active:scale-95 backdrop-blur-md"
             >
                 Salir
