@@ -66,26 +66,43 @@ const App: React.FC = () => {
 
   const handleEmergencyReset = () => {
       localStorage.clear(); // Borra todo rastro de sesiones corruptas
-      window.location.reload();
+      sessionStorage.clear();
+      // Forzar recarga limpiando caché si es posible
+      window.location.href = window.location.origin + window.location.pathname + '?t=' + new Date().getTime();
   };
 
   useEffect(() => {
-      // Temporizador de seguridad
+      // Temporizador de seguridad más agresivo (2.5 segundos)
       const safetyTimeout = setTimeout(() => {
-          console.warn("Carga lenta detectada.");
-          // Si tarda más de 3 segundos, mostramos el botón de reset por si acaso
+          // Si sigue cargando después de 2.5s, algo anda mal.
+          // Mostramos el botón de reset y desbloqueamos la UI para ir al Login si no hay usuario.
+          console.warn("Tiempo de carga excedido.");
           setShowReset(true);
-          // Intentamos desbloquear
-          setLoading(false);
-      }, 3000);
+          
+          // Si no tenemos usuario cargado aún, forzamos fin de carga para mostrar Login
+          // Esto ayuda si la promesa de Supabase se quedó colgada.
+          if (!user) {
+             setLoading(false); 
+          }
+      }, 2500);
 
       const { data: { subscription } } = subscribeToAuthChanges(async (event, session) => {
           if (event === 'PASSWORD_RECOVERY') {
               setIsRecovery(true);
           } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
               if (session?.user && !user) {
-                  const profile = await getCurrentUserProfile();
-                  if (profile) setUser(profile);
+                  // Intentamos cargar perfil
+                  try {
+                    const profile = await getCurrentUserProfile();
+                    if (profile) {
+                        setUser(profile);
+                    } else {
+                        throw new Error("Perfil vacío");
+                    }
+                  } catch (e) {
+                      console.error("Fallo al cargar perfil en evento de Auth:", e);
+                      // No hacemos signOut inmediato aquí para evitar bucles infinitos si Auth dispara eventos rápido
+                  }
               }
           } else if (event === 'SIGNED_OUT') {
               setUser(null);
@@ -98,19 +115,18 @@ const App: React.FC = () => {
           if (u) {
               setUser(u);
           } else {
-              // FIX CRITICO: Si no pudimos cargar el perfil (por error de red o conflicto),
-              // pero había una sesión "latente", cerramos sesión para limpiar el estado corrupto.
-              // Esto evita que el usuario se quede en el limbo.
+              // Si no hay usuario, nos aseguramos de limpiar estado
               await signOut();
           }
       })
       .catch(err => {
-          console.error("Error en carga inicial de usuario:", err);
-          signOut(); // Asegurar limpieza en caso de error
+          console.error("Error crítico en carga inicial:", err);
+          // En caso de error crítico, borramos sesión
+          signOut();
       })
       .finally(() => {
-          clearTimeout(safetyTimeout); // Cancelar el temporizador si cargó bien
-          setLoading(false); // Finalizar carga tanto si hay usuario como si no
+          clearTimeout(safetyTimeout); 
+          setLoading(false); 
       });
 
       return () => {
@@ -158,22 +174,26 @@ const App: React.FC = () => {
   if (loading) {
       return (
           <div className="min-h-screen flex items-center justify-center bg-gray-100">
-              <div className="flex flex-col items-center gap-4 p-6 text-center">
+              <div className="flex flex-col items-center gap-6 p-6 text-center max-w-sm w-full">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                  <p className="text-gray-600 font-medium animate-pulse">Iniciando Sistema...</p>
-                  <p className="text-xs text-gray-400">Verificando conexión segura...</p>
                   
-                  {showReset && (
-                      <div className="mt-8 animate-fade-in">
-                          <p className="text-red-500 text-sm mb-2">¿Demasiado tiempo?</p>
-                          <button 
+                  <div>
+                    <p className="text-gray-800 font-bold text-lg">Iniciando Sistema...</p>
+                    <p className="text-xs text-gray-500 mt-1">Verificando credenciales</p>
+                  </div>
+                  
+                  {/* Mostrar botón de reset si tarda mucho O siempre después de 1 seg para emergencias */}
+                  <div className={`transition-opacity duration-500 ${showReset ? 'opacity-100' : 'opacity-0'}`}>
+                      <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+                        <p className="text-yellow-800 text-xs mb-3 font-medium">¿Problemas para entrar?</p>
+                        <button 
                             onClick={handleEmergencyReset}
-                            className="bg-red-100 text-red-700 px-4 py-2 rounded text-sm font-bold border border-red-200 hover:bg-red-200"
-                          >
-                              Reiniciar App (Borrar Caché)
-                          </button>
+                            className="w-full bg-red-500 text-white px-4 py-2 rounded shadow hover:bg-red-600 text-sm font-bold transition-colors"
+                        >
+                            Reiniciar Aplicación
+                        </button>
                       </div>
-                  )}
+                  </div>
               </div>
           </div>
       );
