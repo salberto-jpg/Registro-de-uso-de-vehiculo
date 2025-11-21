@@ -63,55 +63,61 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // LÓGICA DE AUTENTICACIÓN SIMPLIFICADA (ESTÁNDAR)
+  // --- LÓGICA MAESTRA DE INICIO ---
   useEffect(() => {
-      let mounted = true;
+      let isMounted = true;
 
-      const initAuth = async () => {
-          try {
-              // 1. Intentar obtener el usuario actual
-              const profile = await getCurrentUserProfile();
-              
-              if (mounted) {
-                  setUser(profile); // Si es null, irá al Login. Si es User, irá a la App.
+      // 1. Inicialización con Timeout de Seguridad
+      // Esto garantiza que NUNCA se quede pegado en "Cargando..."
+      const init = async () => {
+          // Forzar finalización de carga después de 2.5 segundos si la red falla
+          const safetyTimeout = setTimeout(() => {
+              if (isMounted && loading) {
+                  console.warn("Tiempo de carga excedido, mostrando interfaz.");
+                  setLoading(false);
               }
-          } catch (error) {
-              console.error("Error iniciando sesión:", error);
-              if (mounted) setUser(null);
+          }, 2500);
+
+          try {
+              const profile = await getCurrentUserProfile();
+              if (isMounted) {
+                  setUser(profile);
+              }
+          } catch (e) {
+              console.error("Error fatal en inicio:", e);
+              if (isMounted) setUser(null);
           } finally {
-              if (mounted) setLoading(false);
+              clearTimeout(safetyTimeout);
+              if (isMounted) setLoading(false);
           }
       };
 
-      initAuth();
+      init();
 
-      // 2. Escuchar cambios en tiempo real (Login, Logout, Token Refresh)
-      const { data: { subscription } } = subscribeToAuthChanges(async (event, session) => {
-          if (!mounted) return;
-
-          if (event === 'PASSWORD_RECOVERY') {
-              setIsRecovery(true);
-          } else if (event === 'SIGNED_OUT') {
+      // 2. Suscripción a eventos de Supabase (Login/Logout en otras pestañas o ventanas)
+      const { data: { subscription } } = subscribeToAuthChanges((event, session) => {
+          if (!isMounted) return;
+          
+          if (event === 'SIGNED_OUT') {
               setUser(null);
               setLoading(false);
-          } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-              // Solo recargar perfil si no lo tenemos ya, para evitar parpadeos
+          } else if (event === 'SIGNED_IN') {
+              // Solo recargar si no tenemos usuario, para evitar parpadeos
               if (!user) {
-                  setLoading(true);
-                  const profile = await getCurrentUserProfile();
-                  if (mounted) {
-                      setUser(profile);
-                      setLoading(false);
-                  }
+                   getCurrentUserProfile().then(u => {
+                       if (isMounted) setUser(u);
+                   });
               }
+          } else if (event === 'PASSWORD_RECOVERY') {
+              setIsRecovery(true);
           }
       });
-      
+
       return () => {
-          mounted = false;
+          isMounted = false;
           subscription.unsubscribe();
       };
-  }, []); // Dependencias vacías: solo se ejecuta al montar
+  }, []);
 
   const vehicleMatch = route.match(/#\/vehicle\/(.+)/);
   const vehicleId = vehicleMatch ? vehicleMatch[1] : null;
@@ -149,14 +155,12 @@ const App: React.FC = () => {
       window.location.hash = '';
   };
 
-  // Renderizado de Carga Simple
+  // PANTALLA DE CARGA
   if (loading) {
       return (
-          <div className="min-h-screen flex items-center justify-center bg-gray-100">
-              <div className="flex flex-col items-center gap-4">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                  <p className="text-gray-500 font-medium">Cargando aplicación...</p>
-              </div>
+          <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 text-gray-600 gap-4">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-indigo-600"></div>
+              <p className="font-medium text-sm animate-pulse">Iniciando sistema...</p>
           </div>
       );
   }
@@ -199,8 +203,6 @@ const App: React.FC = () => {
                 onClick={async () => { 
                     setLoading(true);
                     await signOut(); 
-                    // El listener onAuthStateChange manejará el estado, 
-                    // pero recargamos para limpiar memoria por seguridad
                     window.location.reload(); 
                 }} 
                 className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs font-semibold px-4 py-2 rounded-full transition-all active:scale-95 backdrop-blur-md"
@@ -253,7 +255,15 @@ const App: React.FC = () => {
     );
   }
 
-  return <div>Rol no reconocido</div>;
+  return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+          <div className="bg-white p-8 rounded-lg shadow-md max-w-md text-center">
+              <h2 className="text-red-500 font-bold text-xl mb-2">Error de Acceso</h2>
+              <p className="text-gray-600 mb-4">Tu usuario no tiene un rol asignado válido.</p>
+              <button onClick={() => signOut().then(() => window.location.reload())} className="bg-gray-800 text-white px-4 py-2 rounded">Volver al Inicio</button>
+          </div>
+      </div>
+  );
 };
 
 export default App;

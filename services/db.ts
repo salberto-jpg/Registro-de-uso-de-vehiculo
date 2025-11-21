@@ -75,7 +75,7 @@ const transformUser = (u: any): User => ({
 
 export const signInWithEmail = async (email: string, password: string): Promise<{ user: User | null, error?: string }> => {
   
-  // --- DEV BACKDOOR (Solo si falla todo) ---
+  // --- DEV BACKDOOR ---
   if ((email === 'salberto@metallo.com.ar' || email === 'admin@fleet.com') && password === 'admin') {
       return { 
           user: { 
@@ -98,8 +98,6 @@ export const signInWithEmail = async (email: string, password: string): Promise<
     if (authError) return { user: null, error: authError.message };
     if (!authData.user) return { user: null, error: 'No se pudo obtener el usuario.' };
 
-    // Login exitoso. La app llamará a getCurrentUserProfile automáticamente por el cambio de estado.
-    // Retornamos un usuario temporal basado en la metadata para feedback inmediato
     const immediateUser: User = {
         id: authData.user.id,
         email: email,
@@ -121,7 +119,6 @@ export const signOut = async () => {
   if (supabase) {
       await supabase.auth.signOut();
   }
-  // Eliminamos la limpieza manual agresiva de localStorage para confiar en el manejo de estado de Supabase
 };
 
 export const resetPassword = async (email: string) => {
@@ -145,63 +142,61 @@ export const updateUserPassword = async (password: string) => {
 };
 
 /**
- * Función Estándar y Limpia para Obtener Perfil
- * 1. Pregunta a Supabase Auth si hay sesión.
- * 2. Si hay, busca el perfil en la BD.
- * 3. Si la BD falla (ej. RLS mal configurado), retorna el usuario de Auth (Fail-safe).
+ * OBTIENE EL PERFIL ACTUAL DE FORMA SEGURA Y ROBUSTA
+ * Usa getUser() para validar el token contra el servidor (evita sesiones zombies).
+ * Si la BD falla, recupera datos de metadata para no bloquear al usuario.
  */
 export const getCurrentUserProfile = async (): Promise<User | null> => {
   try {
     const supabase = getSupabaseClient();
     if (!isSupabaseConfigured() || !supabase) return null;
 
-    // 1. Obtener sesión activa (Sin timeouts raros, confiando en la caché de Supabase)
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    // 1. VALIDACIÓN ESTRICTA: getUser() verifica la validez del token en el servidor
+    // getSession() es rápido pero puede devolver tokens revocados o expirados localmente
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
     
-    if (sessionError || !session || !session.user) {
-        return null; // No hay usuario, punto.
+    if (authError || !user) {
+        // Si hay error de token, no intentamos nada más, devolvemos null para forzar login
+        return null; 
     }
 
-    const authUser = session.user;
-    const email = authUser.email || '';
+    const email = user.email || '';
 
-    // 2. Intentar obtener perfil extendido de base de datos
+    // 2. INTENTO DE CARGA DE PERFIL (Best Effort)
     try {
         const { data: profileData, error: profileError } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', authUser.id)
+            .eq('id', user.id)
             .single();
 
         if (profileData && !profileError) {
             return transformUser(profileData);
         }
-        
-        if (profileError) {
-            console.warn("No se pudo cargar perfil DB (usando Auth metadata):", profileError.message);
-        }
     } catch (dbError) {
-        console.warn("Error de red al buscar perfil DB", dbError);
+        // Ignoramos errores de red DB puntuales si la Auth es válida
+        console.warn("Warn: Usando perfil fallback por error DB", dbError);
     }
 
-    // 3. Fallback: Si falla la tabla profiles, usar Auth User (Para que la app no se bloquee)
-    // Esto arregla el problema de "Cargando..." infinito si la DB tiene problemas.
-    let fallbackRole = (authUser.user_metadata?.role as UserRole) || UserRole.DRIVER;
+    // 3. FALLBACK SEGURO (Fail-Open)
+    // Si el usuario existe en Auth pero no pudimos leer su perfil (RLS, error red),
+    // lo dejamos entrar con los datos que tenemos en el token.
+    let fallbackRole = (user.user_metadata?.role as UserRole) || UserRole.DRIVER;
     
-    // Admin hardcoded por seguridad si la DB falla
+    // Hardcode de seguridad para el dueño
     if (email === 'salberto@metallo.com.ar' || email === 'admin@fleet.com') {
         fallbackRole = UserRole.ADMIN;
     }
 
     return {
-        id: authUser.id,
+        id: user.id,
         email: email,
-        name: authUser.user_metadata?.name || email.split('@')[0],
+        name: user.user_metadata?.name || email.split('@')[0],
         role: fallbackRole
     };
 
   } catch (e) {
-    console.error("Error general en getUserProfile:", e);
+    console.error("Critical Error in getCurrentUserProfile:", e);
     return null;
   }
 };
@@ -214,16 +209,13 @@ export const subscribeToAuthChanges = (callback: (event: string, session: any) =
   return { data: { subscription: { unsubscribe: () => {} } } };
 };
 
-// --- USER MANAGEMENT (ADMIN ONLY) ---
+// --- USER MANAGEMENT ---
 
 export const getAllUsers = async (): Promise<User[]> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('profiles').select('*').order('name');
-    if (error) {
-        console.error("Error fetching users:", error);
-        throw new Error(`Error cargando usuarios: ${error.message}`);
-    }
+    if (error) throw new Error(`Error cargando usuarios: ${error.message}`);
     return data.map(transformUser);
   }
   return loadMockDB().users;
@@ -234,6 +226,7 @@ export const adminCreateUser = async (newUser: Omit<User, 'id'>, password?: stri
     if (isSupabaseConfigured() && supabase) {
         const { url, key } = getSupabaseConfig();
         
+        // Crear cliente temporal para no cerrar la sesión del admin
         const tempSupabase = createClient(url!, key!, {
             auth: {
                 persistSession: false, 
@@ -253,19 +246,8 @@ export const adminCreateUser = async (newUser: Omit<User, 'id'>, password?: stri
             }
         });
 
-        if (authError) {
-            if (authError.message?.includes("security purposes") || authError.status === 429) {
-                 throw new Error("⚠️ Límite de seguridad de Supabase: Espera 60s entre creación de usuarios.");
-            }
-            if (authError.message?.includes("already registered") || authError.status === 400) {
-                 throw new Error("Este correo ya está registrado.");
-            }
-            throw new Error("Error Auth: " + (authError.message || JSON.stringify(authError)));
-        }
-
-        if (!authData.user) {
-            throw new Error("No se recibió ID de usuario.");
-        }
+        if (authError) throw new Error("Error Auth: " + authError.message);
+        if (!authData.user) throw new Error("No se recibió ID de usuario.");
 
         const newId = authData.user.id;
 
@@ -277,10 +259,7 @@ export const adminCreateUser = async (newUser: Omit<User, 'id'>, password?: stri
         });
 
         if (rpcError) {
-             if (rpcError.code === 'PGRST202') {
-                 throw new Error("Falta función 'create_profile'. Ejecuta 'Ayuda DB' -> 'Reparar Permisos'.");
-             }
-             if (rpcError.code === '23505') {
+             if (rpcError.code === '23505') { // Duplicate key
                  return { id: newId, email: newUser.email, name: newUser.name, role: newUser.role };
              }
              throw new Error("Error Profile: " + rpcError.message);
@@ -327,11 +306,9 @@ export const getVehicle = async (id: string): Promise<Vehicle | undefined> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('vehicles').select('*').eq('id', id).single();
-    if (error) console.error("Error fetching vehicle:", error);
     if (error || !data) return undefined;
     return transformVehicle(data);
   }
-
   const db = loadMockDB();
   return db.vehicles.find(v => v.id === id);
 };
@@ -340,16 +317,11 @@ export const getAllVehicles = async (): Promise<Vehicle[]> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('vehicles').select('*').order('name');
-    if (error) {
-        console.error("Error fetching vehicles:", error);
-        throw new Error(`Error cargando vehículos: ${error.message} (Hint: Ejecuta 'Ayuda DB')`);
-    }
+    if (error) throw new Error(`Error cargando vehículos: ${error.message}`);
     return data.map(transformVehicle);
   }
   return loadMockDB().vehicles;
 };
-
-// --- IMPROVED VEHICLE CRUD USING RPC (V5) ---
 
 export const createVehicle = async (vehicle: Omit<Vehicle, 'id'>): Promise<Vehicle> => {
   const supabase = getSupabaseClient();
@@ -368,17 +340,8 @@ export const createVehicle = async (vehicle: Omit<Vehicle, 'id'>): Promise<Vehic
     };
 
     const { data, error } = await supabase.rpc('manage_vehicle_v5', { payload });
-    
-    if (error) {
-         if (error.code === 'PGRST202') {
-             throw new Error("Falta función 'manage_vehicle_v5'. Ve a 'Ayuda DB > Reparar Permisos'.");
-         }
-         throw new Error(error.message || `Error desconocido (${error.code})`);
-    }
-
-    if (!data) {
-        throw new Error("Error desconocido: Sin respuesta de BD. Ejecuta 'Ayuda DB > Reparar'.");
-    }
+    if (error) throw new Error(error.message);
+    if (!data) throw new Error("Sin respuesta de BD.");
     
     return transformVehicle(data);
   }
@@ -405,10 +368,7 @@ export const updateVehicle = async (vehicle: Vehicle): Promise<void> => {
     };
 
     const { data, error } = await supabase.rpc('manage_vehicle_v5', { payload });
-
     if (error) throw new Error(error.message);
-    if (!data) throw new Error("Error al actualizar: Sin respuesta.");
-    
     return;
   }
 
@@ -424,9 +384,7 @@ export const deleteVehicle = async (id: string): Promise<void> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const payload = { op: 'delete', id: id };
-    
     const { error } = await supabase.rpc('manage_vehicle_v5', { payload });
-    
     if (error) throw new Error(error.message);
     return;
   }
@@ -447,14 +405,7 @@ export const seedDatabase = async (): Promise<void> => {
     ];
 
     for (const v of vehiclesToCreate) {
-        try {
-             await createVehicle(v);
-        } catch (e: any) {
-             console.warn(`Skipping ${v.name}:`, e.message);
-             if (e.message?.includes('Falta función') || e.message?.includes('relation')) {
-                 throw e; // Rethrow critical schema errors
-             }
-        }
+        try { await createVehicle(v); } catch (e) { console.warn(e); }
     }
     return;
 };
@@ -465,10 +416,7 @@ export const getAllLogs = async (): Promise<VehicleLog[]> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('logs').select('*').order('start_time', { ascending: false });
-    if (error) {
-        console.error("Error fetching logs:", error);
-        throw new Error(`Error cargando historial: ${error.message}`);
-    }
+    if (error) throw new Error(`Error cargando historial: ${error.message}`);
     return data.map(transformLog);
   }
   return loadMockDB().logs;
@@ -477,17 +425,10 @@ export const getAllLogs = async (): Promise<VehicleLog[]> => {
 export const getActiveLog = async (vehicleId: string): Promise<VehicleLog | undefined> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
-    const { data } = await supabase
-      .from('logs')
-      .select('*')
-      .eq('vehicle_id', vehicleId)
-      .is('end_time', null)
-      .single();
-    
+    const { data } = await supabase.from('logs').select('*').eq('vehicle_id', vehicleId).is('end_time', null).single();
     if (data) return transformLog(data);
     return undefined;
   }
-
   const db = loadMockDB();
   return db.logs.find(l => l.vehicleId === vehicleId && !l.endTime);
 };
@@ -495,13 +436,7 @@ export const getActiveLog = async (vehicleId: string): Promise<VehicleLog | unde
 export const getUserActiveTrip = async (userId: string): Promise<VehicleLog | undefined> => {
     const supabase = getSupabaseClient();
     if (isSupabaseConfigured() && supabase) {
-        const { data } = await supabase
-        .from('logs')
-        .select('*')
-        .eq('driver_id', userId)
-        .is('end_time', null)
-        .single();
-        
+        const { data } = await supabase.from('logs').select('*').eq('driver_id', userId).is('end_time', null).single();
         if (data) return transformLog(data);
         return undefined;
     }
@@ -512,11 +447,9 @@ export const getUserActiveTrip = async (userId: string): Promise<VehicleLog | un
 export const startTrip = async (vehicleId: string, user: User): Promise<void> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
-    // 1. Get current mileage
     const v = await getVehicle(vehicleId);
     if (!v) throw new Error('Vehicle not found');
 
-    // 2. Create Log
     const { error: logError } = await supabase.from('logs').insert({
       vehicle_id: vehicleId,
       driver_id: user.id,
@@ -526,7 +459,6 @@ export const startTrip = async (vehicleId: string, user: User): Promise<void> =>
     });
     if (logError) throw new Error(logError.message);
 
-    // 3. Update Vehicle Status
     const updatePayload = {
          op: 'update',
          id: v.id,
@@ -590,14 +522,11 @@ export const endTrip = async (vehicleId: string): Promise<void> => {
   const db = loadMockDB();
   const log = db.logs.find(l => l.vehicleId === vehicleId && !l.endTime);
   const v = db.vehicles.find(veh => veh.id === vehicleId);
-  
   if (log && v) {
-    const endM = log.startMileage + 15;
     log.endTime = new Date().toISOString();
-    log.endMileage = endM;
-    
+    log.endMileage = log.startMileage + 15;
     v.status = VehicleStatus.AVAILABLE;
-    v.currentMileage = endM;
+    v.currentMileage = log.endMileage;
     saveMockDB(db);
   }
 };
