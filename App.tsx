@@ -51,6 +51,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true); 
   const [route, setRoute] = useState<string>(window.location.hash);
   const [manualId, setManualId] = useState('');
+  const [loadingMessage, setLoadingMessage] = useState('Cargando sistema...');
   
   const [isRecovery, setIsRecovery] = useState(() => {
       const h = window.location.hash;
@@ -69,21 +70,39 @@ const App: React.FC = () => {
 
       const init = async () => {
           console.log("Iniciando aplicación...");
-          try {
-              // RACE CONDITION: Base de datos vs Timeout (3s)
-              // Si la BD no responde en 3 segundos, forzamos la carga como "no logueado"
-              // para que el usuario pueda ver el Login y no se quede esperando.
-              const timeoutPromise = new Promise<null>((resolve) => 
-                  setTimeout(() => {
-                      console.warn("Timeout de carga inicial.");
-                      resolve(null);
-                  }, 3000)
-              );
+          
+          // DETECCIÓN DE FLUJO DE AUTENTICACIÓN (Token en URL)
+          // Si hay un token de acceso, es porque el usuario viene de un email de confirmación.
+          // NO debemos usar el timeout corto, hay que esperar a Supabase.
+          const hash = window.location.href;
+          const isAuthRedirect = hash.includes('access_token') || hash.includes('type=signup') || hash.includes('type=recovery') || hash.includes('type=invite');
+          
+          if (isAuthRedirect) {
+              console.log("Detectado flujo de confirmación de correo/recuperación.");
+              setLoadingMessage("Verificando cuenta y validando credenciales...");
+          }
 
-              const userProfile = await Promise.race([
-                  getCurrentUserProfile(),
-                  timeoutPromise
-              ]);
+          try {
+              let userProfile: User | null = null;
+
+              if (isAuthRedirect) {
+                  // SI ES REDIRECT: Esperamos mucho más (15s) o confiamos en el listener
+                  // No usamos Promise.race agresivo aquí para dar tiempo al handshake de token.
+                   userProfile = await getCurrentUserProfile();
+              } else {
+                  // SI ES CARGA NORMAL: Usamos el timeout para no bloquear
+                  const timeoutPromise = new Promise<null>((resolve) => 
+                      setTimeout(() => {
+                          console.warn("Timeout de carga inicial.");
+                          resolve(null);
+                      }, 3000)
+                  );
+
+                  userProfile = await Promise.race([
+                      getCurrentUserProfile(),
+                      timeoutPromise
+                  ]);
+              }
 
               if (isMounted) {
                   setUser(userProfile);
@@ -107,7 +126,8 @@ const App: React.FC = () => {
               setUser(null);
               setLoading(false);
           } else if (event === 'SIGNED_IN') {
-               // Si entra, intentamos recargar el perfil
+               // Si entra (incluso por link de correo), intentamos recargar el perfil
+               // Esto es crucial para la confirmación de correo
                if (!user) {
                    setLoading(true);
                    getCurrentUserProfile().then(u => {
@@ -171,7 +191,7 @@ const App: React.FC = () => {
       return (
           <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 text-gray-600 gap-4">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-300 border-t-indigo-600"></div>
-              <p className="font-medium text-sm animate-pulse">Cargando sistema...</p>
+              <p className="font-medium text-sm animate-pulse">{loadingMessage}</p>
               {/* Botón de escape por si acaso */}
               <button 
                   onClick={() => { signOut(); window.location.reload(); }}

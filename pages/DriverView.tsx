@@ -93,13 +93,13 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
   }
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900">
-        <div className="text-white text-xl animate-pulse">Procesando código QR...</div>
+    <div className="min-h-screen flex items-center justify-center bg-slate-900">
+        <div className="text-white text-xl animate-pulse font-medium">Conectando con flota...</div>
     </div>
   );
 
   if (successMessage) return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-900 text-white p-4 text-center">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 text-white p-4 text-center">
           <div className="rounded-full bg-green-500 text-white p-6 mb-6 shadow-lg animate-bounce">
             <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
           </div>
@@ -108,9 +108,9 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
   );
 
   if (!vehicle) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4">
         <div className="text-red-500 font-bold text-xl mb-4">Vehículo no encontrado</div>
-        <button onClick={handleBack} className="bg-gray-800 text-white px-6 py-2 rounded-lg">Volver</button>
+        <button onClick={handleBack} className="bg-slate-800 text-white px-6 py-2 rounded-lg font-bold">Volver</button>
     </div>
   );
 
@@ -127,7 +127,7 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
                       Ya tienes un viaje en curso con: <br/>
                       <strong className="text-gray-800 block mt-1 text-lg">{otherVehicleName || 'Otro Vehículo'}</strong>
                   </p>
-                  <button onClick={() => window.location.hash = ''} className="w-full py-3 bg-gray-800 text-white rounded-xl font-bold shadow hover:bg-black">
+                  <button onClick={() => window.location.hash = ''} className="w-full py-3 bg-slate-800 text-white rounded-xl font-bold shadow hover:bg-black">
                       Entendido
                   </button>
               </div>
@@ -138,17 +138,18 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
   const isMyTrip = vehicleActiveLog?.driverId === user.id;
   if (isMyTrip) {
       return (
-          <div className="min-h-screen bg-indigo-50 flex flex-col relative">
+          <div className="min-h-screen bg-blue-50 flex flex-col relative">
                  <button onClick={fetchData} className="absolute top-4 right-4 text-white/50 hover:text-white z-10 bg-black/20 p-2 rounded-full">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                  </button>
 
-                 <div className="bg-indigo-600 p-8 pb-24 rounded-b-[3rem] shadow-lg text-center">
+                 {/* Updated to Blue Theme */}
+                 <div className="bg-gradient-to-br from-blue-700 to-blue-500 p-8 pb-24 rounded-b-[3rem] shadow-lg text-center">
                     <h1 className="text-3xl font-bold text-white">{vehicle.name}</h1>
-                    <p className="text-indigo-200 mt-2 text-lg">{vehicle.licensePlate}</p>
+                    <p className="text-blue-100 mt-2 text-lg tracking-widest font-mono">{vehicle.licensePlate}</p>
                     <div className="mt-8 flex flex-col items-center gap-2">
-                        <span className="text-indigo-200 text-xs uppercase tracking-wider">Tiempo en Viaje</span>
-                        <div className="bg-indigo-800/50 text-white px-10 py-6 rounded-2xl border border-indigo-400/30 shadow-inner">
+                        <span className="text-blue-200 text-xs uppercase tracking-wider font-bold">Tiempo en Viaje</span>
+                        <div className="bg-black/20 text-white px-10 py-6 rounded-2xl border border-white/10 shadow-inner backdrop-blur-sm">
                             {vehicleActiveLog && <TripTimer startTime={vehicleActiveLog.startTime} />}
                         </div>
                     </div>
@@ -156,65 +157,76 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
 
                  <div className="flex-1 flex flex-col items-center justify-center p-6 -mt-10">
                      <div className="bg-white w-full max-w-sm p-6 rounded-2xl shadow-xl text-center space-y-6">
-                        <p className="text-gray-600 text-lg font-medium">¿Vas a dejar el vehículo?</p>
+                        <p className="text-slate-600 text-lg font-medium">¿Vas a dejar el vehículo?</p>
                         
                         {/* FOTO DEL VEHICULO AL DEVOLVER */}
-                        {vehicle.imageUrl && (
-                            <div className="w-full h-48 rounded-xl overflow-hidden bg-white border border-gray-200 relative">
+                        <div className="w-full h-48 rounded-xl overflow-hidden bg-white border border-slate-200 relative flex items-center justify-center">
+                            {vehicle.imageUrl ? (
                                 <img src={vehicle.imageUrl} alt={vehicle.name} className="w-full h-full object-contain" />
-                            </div>
-                        )}
+                            ) : (
+                                <div className="text-slate-300 flex flex-col items-center">
+                                    <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                    <span className="text-xs">Sin imagen</span>
+                                </div>
+                            )}
+                        </div>
 
                         <button
                             onClick={handleReturnVehicle}
                             disabled={actionLoading}
-                            className="w-full py-5 bg-gray-900 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-black transform transition hover:scale-105 active:scale-95"
+                            className="w-full py-5 bg-slate-900 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-black transform transition hover:scale-105 active:scale-95 border-b-4 border-slate-700 active:border-b-0 active:translate-y-1"
                         >
                             {actionLoading ? 'Procesando...' : 'DEVOLVER VEHÍCULO'}
                         </button>
                      </div>
-                     <button onClick={handleBack} className="mt-6 text-gray-400 text-sm underline">Cancelar</button>
+                     <button onClick={handleBack} className="mt-6 text-slate-400 text-sm underline hover:text-slate-600">Cancelar</button>
                  </div>
           </div>
       );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col relative">
+    <div className="min-h-screen bg-slate-50 flex flex-col relative">
+        {/* Keep Green for semantic "Go/Available" action, but styled cleanly */}
         <div className="bg-green-600 p-8 pb-16 rounded-b-[3rem] shadow-lg text-center relative">
              <button onClick={fetchData} className="absolute top-4 right-4 text-white/50 hover:text-white z-10 bg-black/20 p-2 rounded-full">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
              </button>
 
             <h1 className="text-3xl font-bold text-white">{vehicle.name}</h1>
-            <p className="text-green-100 mt-2 text-lg">{vehicle.licensePlate}</p>
-            <div className="mt-4 inline-block bg-white text-green-700 px-4 py-1 rounded-full font-bold text-sm shadow-sm">
+            <p className="text-green-100 mt-2 text-lg tracking-widest font-mono">{vehicle.licensePlate}</p>
+            <div className="mt-4 inline-block bg-white/20 backdrop-blur-sm border border-white/30 text-white px-4 py-1 rounded-full font-bold text-sm shadow-sm">
                 {vehicle.status === VehicleStatus.IN_USE ? 'EN USO (Cambio de chofer)' : 'DISPONIBLE'}
             </div>
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 -mt-10">
             <div className="bg-white w-full max-w-sm p-6 rounded-2xl shadow-xl text-center space-y-6">
-                <div className="text-gray-500 text-sm">
+                <div className="text-slate-500 text-sm font-medium">
                     Al tomar el vehículo, confirmas que tienes las llaves y estás listo para salir.
                 </div>
                 
                 {/* FOTO DEL VEHICULO AL TOMAR */}
-                {vehicle.imageUrl && (
-                    <div className="w-full h-48 rounded-xl overflow-hidden bg-white border border-gray-200 relative">
+                <div className="w-full h-48 rounded-xl overflow-hidden bg-white border border-slate-200 relative flex items-center justify-center">
+                    {vehicle.imageUrl ? (
                         <img src={vehicle.imageUrl} alt={vehicle.name} className="w-full h-full object-contain" />
-                    </div>
-                )}
+                    ) : (
+                        <div className="text-slate-300 flex flex-col items-center">
+                            <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            <span className="text-xs">Sin imagen</span>
+                        </div>
+                    )}
+                </div>
 
                 <button
                     onClick={handleTakeVehicle}
                     disabled={actionLoading}
-                    className="w-full py-5 bg-green-600 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-green-700 transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2"
+                    className="w-full py-5 bg-green-600 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-green-700 transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"
                 >
                     {actionLoading ? 'Asignando...' : <span>TOMAR VEHÍCULO</span>}
                 </button>
             </div>
-            <button onClick={handleBack} className="mt-8 text-gray-400 text-sm hover:text-gray-600">Cancelar</button>
+            <button onClick={handleBack} className="mt-8 text-slate-400 text-sm hover:text-slate-600 font-medium">Cancelar</button>
         </div>
     </div>
   );

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { signInWithEmail, resetPassword } from '../services/db';
 import { User, UserRole } from '../types';
@@ -112,7 +113,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const bgImage = "https://wqccvxkbmoqgiiplogew.supabase.co/storage/v1/object/public/imagenes/fondo.png";
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-end relative font-sans overflow-hidden bg-gray-300">
+    <div className="min-h-screen flex flex-col items-center justify-end relative font-sans overflow-hidden bg-slate-300">
       
       {/* FULL SCREEN BACKGROUND IMAGE - RESET TO STANDARD POSITIONING */}
       <img 
@@ -160,7 +161,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                         type="email"
                         autoComplete="email"
                         required
-                        className="appearance-none w-full px-4 py-3 rounded-md border-0 bg-white/90 backdrop-blur-sm text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-md font-normal text-sm sm:text-base"
+                        className="appearance-none w-full px-4 py-3 rounded-lg border-0 bg-white/90 backdrop-blur-sm text-slate-800 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-md font-normal text-sm sm:text-base transition-all"
                         placeholder="Correo Electrónico"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -174,7 +175,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                         type="password"
                         autoComplete="current-password"
                         required
-                        className="appearance-none w-full px-4 py-3 rounded-md border-0 bg-white/90 backdrop-blur-sm text-gray-800 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-md font-normal text-sm sm:text-base"
+                        className="appearance-none w-full px-4 py-3 rounded-lg border-0 bg-white/90 backdrop-blur-sm text-slate-800 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-md font-normal text-sm sm:text-base transition-all"
                         placeholder="Contraseña"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
@@ -186,7 +187,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center py-3 px-4 border border-transparent text-base font-bold rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition-all shadow-lg uppercase tracking-wider bg-[#4a6cf7] hover:bg-[#3b5bdb]"
+                className="w-full flex justify-center py-3.5 px-4 border border-transparent text-base font-bold rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all shadow-lg uppercase tracking-wider bg-blue-600 hover:bg-blue-700 active:scale-[0.99]"
             >
                 {loading ? 'Cargando...' : 'INICIAR SESIÓN'}
             </button>
@@ -209,15 +210,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         <div className="fixed z-50 inset-0 overflow-y-auto">
           <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
             <div className="fixed inset-0 transition-opacity" aria-hidden="true" onClick={() => setShowConfig(false)}>
-              <div className="absolute inset-0 bg-gray-900 opacity-75 backdrop-blur-sm"></div>
+              <div className="absolute inset-0 bg-slate-900 opacity-75 backdrop-blur-sm"></div>
             </div>
             <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Configuración de Conexión</h3>
+                <h3 className="text-lg leading-6 font-medium text-slate-900 mb-4">Configuración de Conexión</h3>
                 {isConfigured ? (
                   <div className="space-y-4">
-                    <p className="text-sm text-gray-500">La aplicación está conectada a una instancia de Supabase.</p>
+                    <p className="text-sm text-slate-500">La aplicación está conectada a una instancia de Supabase.</p>
                     <button 
                       onClick={handleDisconnect}
                       className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:text-sm"
@@ -227,41 +228,41 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   </div>
                 ) : (
                   <form onSubmit={handleSaveConfig} className="space-y-4">
-                    <p className="text-sm text-gray-500 mb-4">
+                    <p className="text-sm text-slate-500 mb-4">
                       Ingrese las credenciales de su proyecto Supabase.
                     </p>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700">URL</label>
+                      <label className="block text-sm font-medium text-slate-700">URL</label>
                       <input 
                         required 
                         value={sbUrl}
                         onChange={e => setSbUrl(e.target.value)}
-                        className="mt-1 w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm"
+                        className="mt-1 w-full border border-slate-300 rounded-md shadow-sm p-2 text-sm focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700">Anon Key</label>
+                      <label className="block text-sm font-medium text-slate-700">Anon Key</label>
                       <input 
                         required 
                         value={sbKey}
                         onChange={e => setSbKey(e.target.value)}
-                        className="mt-1 w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm"
+                        className="mt-1 w-full border border-slate-300 rounded-md shadow-sm p-2 text-sm focus:ring-blue-500 focus:border-blue-500"
                       />
                     </div>
                     <button 
                       type="submit"
-                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 sm:text-sm mt-4"
+                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 sm:text-sm mt-4"
                     >
                       Guardar y Conectar
                     </button>
                   </form>
                 )}
               </div>
-              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+              <div className="bg-slate-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                 <button 
                   type="button" 
                   onClick={() => setShowConfig(false)}
-                  className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                  className="mt-3 w-full inline-flex justify-center rounded-md border border-slate-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-slate-700 hover:bg-slate-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
                 >
                   Cerrar
                 </button>

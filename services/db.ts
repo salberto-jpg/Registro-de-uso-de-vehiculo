@@ -1,3 +1,4 @@
+
 import { Vehicle, VehicleLog, User, UserRole, VehicleStatus, MockDB } from '../types';
 import { getSupabaseClient, isSupabaseConfigured, getSupabaseConfig } from './supabase';
 import { createClient } from '@supabase/supabase-js';
@@ -245,14 +246,19 @@ export const adminCreateUser = async (newUser: Omit<User, 'id'>, password?: stri
             auth: {
                 persistSession: false, 
                 autoRefreshToken: false,
-                detectSessionInUrl: false
+                detectSessionInUrl: false,
+                storageKey: 'temp_admin_worker' // Fix for Multiple GoTrueClient warning
             }
         });
 
+        let newId = "";
+
+        // 1. INTENTAR CREAR USUARIO EN AUTH
         const { data: authData, error: authError } = await tempSupabase.auth.signUp({
             email: newUser.email,
-            password: password || 'tempPassword123!', 
+            password: password || 'tempPassword123!',
             options: {
+                emailRedirectTo: 'https://registro-de-uso-de-vehiculo.vercel.app/',
                 data: {
                     name: newUser.name,
                     role: newUser.role
@@ -260,11 +266,39 @@ export const adminCreateUser = async (newUser: Omit<User, 'id'>, password?: stri
             }
         });
 
-        if (authError) throw new Error("Error Auth: " + authError.message);
-        if (!authData.user) throw new Error("No se recibió ID de usuario.");
+        if (authError) {
+            const msg = authError.message.toLowerCase();
+            
+            // A) Rate Limit Error - Traducir y detener
+            if (msg.includes('security purposes') || msg.includes('seconds')) {
+                 throw new Error("Por seguridad, espera unos segundos antes de volver a intentar crear el usuario.");
+            }
 
-        const newId = authData.user.id;
+            // B) Database Error - Problema de Trigger
+            if (msg.includes('database error')) {
+                 throw new Error("Conflicto en Base de Datos. Ejecuta el script de 'Reparar Permisos' en el menú de ayuda.");
+            }
 
+            // C) Usuario ya registrado - Intentar recuperación (Idempotencia)
+            if (msg.includes('already registered') || authError.status === 422) {
+                // Si ya existe, necesitamos el ID. No podemos obtenerlo directamente sin loguearnos como él,
+                // pero podemos intentar crear el perfil asumiendo que el ID lo resolverá el admin después
+                // o simplemente fallar más amigablemente.
+                console.warn("Usuario ya existe en Auth, intentando recrear perfil...");
+                // En este caso, no tenemos el ID nuevo. Es un problema.
+                throw new Error("El usuario ya está registrado. Si no aparece en la lista, ejecuta 'Ayuda DB > Reparar Permisos' y crea el usuario de nuevo.");
+            }
+            
+            throw new Error("Error Auth: " + authError.message);
+        }
+
+        if (authData.user) {
+            newId = authData.user.id;
+        } else {
+            throw new Error("No se recibió ID de usuario.");
+        }
+
+        // 2. CREAR O ACTUALIZAR PERFIL PUBLICO
         const { error: rpcError } = await supabase.rpc('create_profile', {
             _id: newId,
             _email: newUser.email,
@@ -439,7 +473,7 @@ export const getAllLogs = async (): Promise<VehicleLog[]> => {
 export const getActiveLog = async (vehicleId: string): Promise<VehicleLog | undefined> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
-    const { data } = await supabase.from('logs').select('*').eq('vehicle_id', vehicleId).is('end_time', null).single();
+    const { data } = await supabase.from('logs').select('*').eq('vehicle_id', vehicleId).is('end_time', null).limit(1).maybeSingle();
     if (data) return transformLog(data);
     return undefined;
   }
@@ -450,7 +484,7 @@ export const getActiveLog = async (vehicleId: string): Promise<VehicleLog | unde
 export const getUserActiveTrip = async (userId: string): Promise<VehicleLog | undefined> => {
     const supabase = getSupabaseClient();
     if (isSupabaseConfigured() && supabase) {
-        const { data } = await supabase.from('logs').select('*').eq('driver_id', userId).is('end_time', null).single();
+        const { data } = await supabase.from('logs').select('*').eq('driver_id', userId).is('end_time', null).limit(1).maybeSingle();
         if (data) return transformLog(data);
         return undefined;
     }
@@ -461,8 +495,38 @@ export const getUserActiveTrip = async (userId: string): Promise<VehicleLog | un
 export const startTrip = async (vehicleId: string, user: User): Promise<void> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
+    
+    // 1. AUTO-HEALING: Close any previous ghost trips for this vehicle
+    const ghostLog = await getActiveLog(vehicleId);
+    if (ghostLog) {
+        console.warn(`Cerrando viaje fantasma para vehículo ${vehicleId}`);
+        await supabase.from('logs').update({
+            end_time: new Date().toISOString(),
+            notes: 'Cierre automático por nuevo inicio'
+        }).eq('id', ghostLog.id);
+    }
+
     const v = await getVehicle(vehicleId);
     if (!v) throw new Error('Vehicle not found');
+
+    // 2. CRITICAL FIX: Ensure Profile Exists (Upsert) to avoid FK error
+    // Even if user is logged in, profile table might be missing the row
+    const { error: profileError } = await supabase.from('profiles').upsert({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role
+    }, { onConflict: 'id' });
+
+    // If normal upsert fails (e.g. RLS), try RPC fallback
+    if (profileError) {
+         await supabase.rpc('create_profile', {
+            _id: user.id,
+            _email: user.email,
+            _name: user.name,
+            _role: user.role
+         });
+    }
 
     const { error: logError } = await supabase.from('logs').insert({
       vehicle_id: vehicleId,
@@ -471,7 +535,32 @@ export const startTrip = async (vehicleId: string, user: User): Promise<void> =>
       start_time: new Date().toISOString(),
       start_mileage: v.currentMileage
     });
-    if (logError) throw new Error(logError.message);
+
+    if (logError) {
+        // Code 23503 is Foreign Key Violation
+        if (logError.code === '23503') {
+             // Last ditch effort: Force create via RPC again then retry log
+             await supabase.rpc('create_profile', {
+                _id: user.id,
+                _email: user.email,
+                _name: user.name,
+                _role: user.role
+             });
+             
+             // Retry insert
+             const { error: retryError } = await supabase.from('logs').insert({
+                vehicle_id: vehicleId,
+                driver_id: user.id,
+                driver_name: user.name,
+                start_time: new Date().toISOString(),
+                start_mileage: v.currentMileage
+             });
+             
+             if (retryError) throw new Error("Error de integridad: Tu usuario no está sincronizado en la base de datos. Contacta al administrador.");
+        } else {
+            throw new Error(logError.message);
+        }
+    }
 
     const updatePayload = {
          op: 'update',
