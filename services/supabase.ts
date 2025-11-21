@@ -23,9 +23,13 @@ export const getSupabaseConfig = () => {
   const localUrl = localStorage.getItem(STORAGE_URL_KEY);
   const localKey = localStorage.getItem(STORAGE_ANON_KEY);
 
+  // Prioridad: 1. Env Vars (Vercel), 2. LocalStorage (Manual), 3. Hardcoded (Fallback)
+  const finalUrl = envUrl || localUrl || HARDCODED_URL;
+  const finalKey = envKey || localKey || HARDCODED_KEY;
+
   return {
-    url: envUrl || localUrl || HARDCODED_URL,
-    key: envKey || localKey || HARDCODED_KEY
+    url: finalUrl,
+    key: finalKey
   };
 };
 
@@ -42,15 +46,21 @@ export const getSupabaseClient = (): SupabaseClient | null => {
   if (url && key) {
     try {
       // Basic validation to prevent crashes with bad URLs
-      if (!url.startsWith('http')) return null;
+      if (!url.startsWith('http')) {
+          console.error("Supabase URL inválida:", url);
+          return null;
+      }
       
       supabaseInstance = createClient(url, key);
+      // Log discreto para confirmar conexión en producción
+      console.log("🔌 Conectando a Supabase:", url);
       return supabaseInstance;
     } catch (e) {
       console.error("Failed to initialize Supabase client", e);
       return null;
     }
   }
+  console.warn("⚠️ Credenciales de Supabase no encontradas.");
   return null;
 };
 
