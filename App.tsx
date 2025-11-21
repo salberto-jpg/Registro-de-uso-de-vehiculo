@@ -49,7 +49,6 @@ const UpdatePasswordView: React.FC<{ onUpdated: () => void }> = ({ onUpdated }) 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true); 
-  const [longLoad, setLongLoad] = useState(false);
   const [route, setRoute] = useState<string>(window.location.hash);
   const [manualId, setManualId] = useState('');
   
@@ -64,78 +63,55 @@ const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const handleClearCache = () => {
-      setLoading(true);
-      console.log("Limpiando caché y reiniciando...");
-      localStorage.clear();
-      sessionStorage.clear();
-      // Eliminar cookies si es posible (aunque JS tiene acceso limitado a HttpOnly cookies)
-      document.cookie.split(";").forEach((c) => {
-          document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
-      });
-      window.location.reload();
-  };
-
+  // LÓGICA DE AUTENTICACIÓN SIMPLIFICADA (ESTÁNDAR)
   useEffect(() => {
       let mounted = true;
 
-      // --- TIMER DE AYUDA VISUAL ---
-      // Si tarda más de 3 segundos, mostramos opciones de reparación
-      const helpTimer = setTimeout(() => {
-          if (mounted && loading) {
-              setLongLoad(true);
-          }
-      }, 3000);
-
       const initAuth = async () => {
           try {
-              // Esta función ahora incluye lógica de autocuración de caché
+              // 1. Intentar obtener el usuario actual
               const profile = await getCurrentUserProfile();
               
               if (mounted) {
-                  if (profile) {
-                      setUser(profile);
-                  } else {
-                      setUser(null);
-                  }
+                  setUser(profile); // Si es null, irá al Login. Si es User, irá a la App.
               }
-          } catch (e) {
-              console.error("Error crítico en inicialización:", e);
+          } catch (error) {
+              console.error("Error iniciando sesión:", error);
               if (mounted) setUser(null);
           } finally {
-              if (mounted) {
-                  setLoading(false);
-              }
+              if (mounted) setLoading(false);
           }
       };
 
       initAuth();
 
+      // 2. Escuchar cambios en tiempo real (Login, Logout, Token Refresh)
       const { data: { subscription } } = subscribeToAuthChanges(async (event, session) => {
           if (!mounted) return;
 
           if (event === 'PASSWORD_RECOVERY') {
               setIsRecovery(true);
-          } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-              // Si la sesión cambia, intentamos actualizar
-              const profile = await getCurrentUserProfile();
-              if (mounted && profile) {
-                   setUser(profile);
-                   setLoading(false); 
-              }
           } else if (event === 'SIGNED_OUT') {
               setUser(null);
-              setIsRecovery(false);
               setLoading(false);
+          } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+              // Solo recargar perfil si no lo tenemos ya, para evitar parpadeos
+              if (!user) {
+                  setLoading(true);
+                  const profile = await getCurrentUserProfile();
+                  if (mounted) {
+                      setUser(profile);
+                      setLoading(false);
+                  }
+              }
           }
       });
       
       return () => {
           mounted = false;
-          clearTimeout(helpTimer);
           subscription.unsubscribe();
       };
-  }, []);
+  }, []); // Dependencias vacías: solo se ejecuta al montar
 
   const vehicleMatch = route.match(/#\/vehicle\/(.+)/);
   const vehicleId = vehicleMatch ? vehicleMatch[1] : null;
@@ -173,42 +149,13 @@ const App: React.FC = () => {
       window.location.hash = '';
   };
 
+  // Renderizado de Carga Simple
   if (loading) {
       return (
-          <div className="min-h-screen flex items-center justify-center bg-gray-100 relative">
-              <div className="flex flex-col items-center gap-6 p-6 text-center max-w-sm w-full z-10">
+          <div className="min-h-screen flex items-center justify-center bg-gray-100">
+              <div className="flex flex-col items-center gap-4">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                  
-                  <div>
-                    <p className="text-gray-800 font-bold text-lg">Iniciando Sistema...</p>
-                    <p className="text-xs text-gray-500 mt-1">Verificando sesión segura</p>
-                  </div>
-                  
-                  {/* Botones de recuperación si tarda mucho */}
-                  {longLoad && (
-                      <div className="mt-4 animate-fade-in flex flex-col gap-3 w-full">
-                        <div className="bg-yellow-50 border border-yellow-200 p-3 rounded text-xs text-yellow-800 mb-2">
-                            ¿Tarda demasiado? Es posible que tu sesión haya caducado.
-                        </div>
-                        <button 
-                            onClick={() => setLoading(false)}
-                            className="w-full px-4 py-3 bg-indigo-600 text-white text-sm font-bold rounded-lg shadow hover:bg-indigo-700 transition-colors"
-                        >
-                            🚀 FORZAR ENTRADA AHORA
-                        </button>
-                        
-                        <button 
-                            onClick={handleClearCache}
-                            className="w-full px-4 py-3 bg-red-100 text-red-700 text-sm font-bold rounded-lg shadow hover:bg-red-200 transition-colors border border-red-300 flex items-center justify-center gap-2"
-                        >
-                            <span>🗑️</span> BORRAR CACHÉ Y REINICIAR
-                        </button>
-                        
-                        <p className="text-[10px] text-gray-400 text-center mt-1">
-                            Usa "Borrar Caché" si el problema persiste.
-                        </p>
-                      </div>
-                  )}
+                  <p className="text-gray-500 font-medium">Cargando aplicación...</p>
               </div>
           </div>
       );
@@ -250,8 +197,10 @@ const App: React.FC = () => {
             
             <button 
                 onClick={async () => { 
-                    setUser(null); 
+                    setLoading(true);
                     await signOut(); 
+                    // El listener onAuthStateChange manejará el estado, 
+                    // pero recargamos para limpiar memoria por seguridad
                     window.location.reload(); 
                 }} 
                 className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs font-semibold px-4 py-2 rounded-full transition-all active:scale-95 backdrop-blur-md"
@@ -297,7 +246,7 @@ const App: React.FC = () => {
           <footer className="p-4 pb-8 text-center">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/5">
                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                  <span className="text-[10px] font-medium text-gray-400">Sistema Operativo v1.0.6</span>
+                  <span className="text-[10px] font-medium text-gray-400">Sistema Operativo v1.0.7</span>
               </div>
           </footer>
       </div>

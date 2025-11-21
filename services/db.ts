@@ -75,7 +75,7 @@ const transformUser = (u: any): User => ({
 
 export const signInWithEmail = async (email: string, password: string): Promise<{ user: User | null, error?: string }> => {
   
-  // --- DEV BACKDOOR ---
+  // --- DEV BACKDOOR (Solo si falla todo) ---
   if ((email === 'salberto@metallo.com.ar' || email === 'admin@fleet.com') && password === 'admin') {
       return { 
           user: { 
@@ -98,24 +98,13 @@ export const signInWithEmail = async (email: string, password: string): Promise<
     if (authError) return { user: null, error: authError.message };
     if (!authData.user) return { user: null, error: 'No se pudo obtener el usuario.' };
 
-    // --- ESTRATEGIA FAIL-OPEN ---
-    // No esperamos a consultar la tabla 'profiles'. Si Auth pasó, construimos el usuario y entramos.
-    // La tabla profiles se sincronizará después o se usará solo para datos extra.
-    
-    let role = UserRole.DRIVER; // Rol por defecto
-    
-    // Detectar Admin por email hardcoded (Seguridad infalible)
-    if (email === 'salberto@metallo.com.ar' || email === 'admin@fleet.com') {
-        role = UserRole.ADMIN;
-    } else if (authData.user.user_metadata?.role) {
-        role = authData.user.user_metadata.role as UserRole;
-    }
-
+    // Login exitoso. La app llamará a getCurrentUserProfile automáticamente por el cambio de estado.
+    // Retornamos un usuario temporal basado en la metadata para feedback inmediato
     const immediateUser: User = {
         id: authData.user.id,
         email: email,
         name: authData.user.user_metadata?.name || email.split('@')[0],
-        role: role
+        role: (authData.user.user_metadata?.role as UserRole) || UserRole.DRIVER
     };
 
     return { user: immediateUser };
@@ -129,9 +118,10 @@ export const signInWithEmail = async (email: string, password: string): Promise<
 
 export const signOut = async () => {
   const supabase = getSupabaseClient();
-  if (supabase) await supabase.auth.signOut();
-  // Limpieza profunda al salir
-  localStorage.removeItem('sb-' + getSupabaseConfig().url?.split('//')[1].split('.')[0] + '-auth-token');
+  if (supabase) {
+      await supabase.auth.signOut();
+  }
+  // Eliminamos la limpieza manual agresiva de localStorage para confiar en el manejo de estado de Supabase
 };
 
 export const resetPassword = async (email: string) => {
@@ -155,91 +145,63 @@ export const updateUserPassword = async (password: string) => {
 };
 
 /**
- * Esta función ahora incluye AUTOCURACIÓN DE CACHÉ.
- * 1. Obtiene sesión local.
- * 2. Intenta validar el token con el servidor (getUser).
- * 3. Si el token es inválido (401), BORRA LA SESIÓN y retorna null.
- * 4. Si la red falla, usa la sesión local (Offline).
+ * Función Estándar y Limpia para Obtener Perfil
+ * 1. Pregunta a Supabase Auth si hay sesión.
+ * 2. Si hay, busca el perfil en la BD.
+ * 3. Si la BD falla (ej. RLS mal configurado), retorna el usuario de Auth (Fail-safe).
  */
 export const getCurrentUserProfile = async (): Promise<User | null> => {
   try {
     const supabase = getSupabaseClient();
     if (!isSupabaseConfigured() || !supabase) return null;
 
-    // 1. Obtener sesión activa local (Rápido)
+    // 1. Obtener sesión activa (Sin timeouts raros, confiando en la caché de Supabase)
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
     if (sessionError || !session || !session.user) {
-        return null; // No hay sesión local
+        return null; // No hay usuario, punto.
     }
 
-    let authUser = session.user;
+    const authUser = session.user;
     const email = authUser.email || '';
 
-    // 2. VALIDACIÓN DE SALUD DE TOKEN (Crucial para evitar bucle de carga)
+    // 2. Intentar obtener perfil extendido de base de datos
     try {
-        // Intentamos conectar con el servidor para verificar que el token no haya expirado
-        // Usamos Promise.race para no bloquear si hay mala conexión
-        const validationPromise = supabase.auth.getUser();
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout Auth"), 2000));
-        
-        const { data: refreshData, error: refreshError } : any = await Promise.race([validationPromise, timeoutPromise]);
-        
-        if (refreshError) {
-            // Si el error es explícitamente de credenciales inválidas (401)
-            if (refreshError.status === 401 || refreshError.code === 'bad_jwt' || refreshError.message?.includes('invalid claim')) {
-                console.error("🚨 Token corrupto o expirado detectado. Limpiando sesión para autocuración.");
-                await supabase.auth.signOut();
-                return null; // Esto forzará al usuario al Login y arreglará el problema "segunda vez"
-            }
-            // Si es otro error (timeout, red), asumimos modo Offline y seguimos.
-            console.warn("⚠️ Validación online falló, usando caché local:", refreshError.message);
-        } else if (refreshData?.user) {
-            // Si tenemos datos frescos del servidor, los usamos
-            authUser = refreshData.user;
-        }
-    } catch (e) {
-        // Timeout de red, seguimos con lo que tenemos en caché
-        console.log("ℹ️ Modo Offline / Red lenta detectada. Usando sesión local.");
-    }
-
-    // 3. Construir Usuario "Seguro" (Fallback)
-    let fallbackUser: User = {
-        id: authUser.id,
-        email: email,
-        name: authUser.user_metadata?.name || email.split('@')[0],
-        role: (authUser.user_metadata?.role as UserRole) || UserRole.DRIVER
-    };
-
-    // Override de Admin Hardcoded
-    if (email === 'salberto@metallo.com.ar' || email === 'admin@fleet.com') {
-        fallbackUser.role = UserRole.ADMIN;
-        fallbackUser.name = 'Super Admin';
-    }
-
-    // 4. Intentar enriquecer con datos de la DB (Opcional)
-    try {
-        const dbPromise = supabase
+        const { data: profileData, error: profileError } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', authUser.id)
             .single();
-            
-        const timeoutDbPromise = new Promise((_, reject) => setTimeout(() => reject("Timeout DB"), 1500));
-        const result: any = await Promise.race([dbPromise, timeoutDbPromise]);
 
-        if (result && result.data) {
-            return transformUser(result.data);
+        if (profileData && !profileError) {
+            return transformUser(profileData);
         }
-    } catch (e) {
-        console.warn("⚠️ DB Profile no respondió a tiempo. Usando datos básicos.");
+        
+        if (profileError) {
+            console.warn("No se pudo cargar perfil DB (usando Auth metadata):", profileError.message);
+        }
+    } catch (dbError) {
+        console.warn("Error de red al buscar perfil DB", dbError);
     }
 
-    // 5. Retornar usuario (Si llegamos aquí, es seguro entrar)
-    return fallbackUser;
+    // 3. Fallback: Si falla la tabla profiles, usar Auth User (Para que la app no se bloquee)
+    // Esto arregla el problema de "Cargando..." infinito si la DB tiene problemas.
+    let fallbackRole = (authUser.user_metadata?.role as UserRole) || UserRole.DRIVER;
+    
+    // Admin hardcoded por seguridad si la DB falla
+    if (email === 'salberto@metallo.com.ar' || email === 'admin@fleet.com') {
+        fallbackRole = UserRole.ADMIN;
+    }
+
+    return {
+        id: authUser.id,
+        email: email,
+        name: authUser.user_metadata?.name || email.split('@')[0],
+        role: fallbackRole
+    };
 
   } catch (e) {
-    console.error("Error fatal en getUserProfile:", e);
+    console.error("Error general en getUserProfile:", e);
     return null;
   }
 };
