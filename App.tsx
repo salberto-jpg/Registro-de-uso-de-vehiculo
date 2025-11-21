@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Login } from './pages/Login';
 import { AdminDashboard } from './pages/AdminDashboard';
@@ -91,11 +92,12 @@ const App: React.FC = () => {
                    userProfile = await getCurrentUserProfile();
               } else {
                   // SI ES CARGA NORMAL: Usamos el timeout para no bloquear
+                  // Aumentado a 8s para evitar "Timeout de carga inicial" en conexiones lentas
                   const timeoutPromise = new Promise<null>((resolve) => 
                       setTimeout(() => {
                           console.warn("Timeout de carga inicial.");
                           resolve(null);
-                      }, 3000)
+                      }, 8000)
                   );
 
                   userProfile = await Promise.race([

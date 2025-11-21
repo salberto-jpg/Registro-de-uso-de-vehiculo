@@ -177,8 +177,8 @@ export const getCurrentUserProfile = async (): Promise<User | null> => {
     const email = user.email || '';
     
     try {
-        // Timeout para la BD: si tarda más de 2s, usamos datos de metadata
-        const timeout = new Promise((_, reject) => setTimeout(() => reject("DB Timeout"), 2000));
+        // Timeout para la BD: Aumentado a 5s para conexiones lentas
+        const timeout = new Promise((_, reject) => setTimeout(() => reject("DB Timeout"), 5000));
         
         const dbPromise = supabase
             .from('profiles')
@@ -192,7 +192,7 @@ export const getCurrentUserProfile = async (): Promise<User | null> => {
             return transformUser(result.data);
         }
     } catch (e) {
-        console.warn("No se pudo cargar perfil de DB, usando metadata:", e);
+        console.warn("No se pudo cargar perfil de DB (Timeout o Error), usando metadata:", e);
     }
 
     // 3. Fallback final: Usar metadata del token
