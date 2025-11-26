@@ -43,7 +43,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   const [userError, setUserError] = useState('');
   const [userMsg, setUserMsg] = useState('');
 
-  const [sqlTab, setSqlTab] = useState<'repair' | 'schema'>('repair');
+  const [sqlTab, setSqlTab] = useState<'repair' | 'schema' | 'clean'>('clean'); // Default to clean
   const [seeding, setSeeding] = useState(false);
 
   const fetchData = async () => {
@@ -270,66 +270,71 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   };
 
   // SQL Scripts
-  const sqlRepairScript = `-- SCRIPT DE REPARACIÓN MAESTRA V5.1
--- EJECUTA ESTO SI TIENES ERRORES DE "DATABASE ERROR" O PERMISOS
+  const sqlRepairScript = `-- SCRIPT DE REPARACIÓN DE PERMISOS (BÁSICO)
+-- Usa este si solo tienes errores de "Permission denied"
 
 NOTIFY pgrst, 'reload schema';
 
--- 1. ELIMINAR TRIGGERS ANTIGUOS CONFLICTIVOS (Causa principal de "Database Error")
+-- 1. ELIMINAR TRIGGERS ANTIGUOS CONFLICTIVOS
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
-DROP FUNCTION IF EXISTS public.handle_new_user CASCADE;
 
--- 2. Limpiar funciones previas
-DROP FUNCTION IF EXISTS create_profile CASCADE;
-DROP FUNCTION IF EXISTS is_admin CASCADE;
-DROP FUNCTION IF EXISTS manage_vehicle_v5 CASCADE;
+-- 2. Permisos y Políticas
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON TABLE public.profiles TO postgres, anon, authenticated, service_role;
+GRANT ALL ON TABLE public.vehicles TO postgres, anon, authenticated, service_role;
+GRANT ALL ON TABLE public.logs TO postgres, anon, authenticated, service_role;
 
--- 3. Recrear tablas si no existen
-CREATE TABLE IF NOT EXISTS public.profiles (
-    id text PRIMARY KEY,
-    email text UNIQUE NOT NULL,
-    name text NOT NULL,
-    role text NOT NULL CHECK (role IN ('ADMIN', 'DRIVER', 'SUPERVISOR')),
-    created_at timestamptz DEFAULT now()
-);
-CREATE TABLE IF NOT EXISTS public.vehicles (
-    id text PRIMARY KEY,
-    name text NOT NULL,
-    license_plate text UNIQUE NOT NULL,
-    status text NOT NULL CHECK (status IN ('AVAILABLE', 'IN_USE', 'MAINTENANCE')),
-    current_mileage integer DEFAULT 0,
-    qr_code_url text,
-    image_url text,
-    notes text,
-    created_at timestamptz DEFAULT now()
-);
-CREATE TABLE IF NOT EXISTS public.logs (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    vehicle_id text REFERENCES public.vehicles(id) ON DELETE SET NULL,
-    driver_id text REFERENCES public.profiles(id) ON DELETE SET NULL,
-    driver_name text NOT NULL,
-    start_time timestamptz DEFAULT now(),
-    end_time timestamptz,
-    start_mileage integer,
-    end_mileage integer,
-    notes text,
-    created_at timestamptz DEFAULT now()
-);
+GRANT EXECUTE ON FUNCTION public.manage_vehicle_v5 TO postgres, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.create_profile TO postgres, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.is_admin TO postgres, anon, authenticated, service_role;
 
--- 4. Funciones RPC
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Policies Profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Policies Vehicles" ON public.vehicles;
+DROP POLICY IF EXISTS "Policies Logs" ON public.logs;
+
+CREATE POLICY "Policies Profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Policies Vehicles" ON public.vehicles FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Policies Logs" ON public.logs FOR ALL USING (true) WITH CHECK (true);
+
+NOTIFY pgrst, 'reload schema';
+`;
+
+  const sqlCleanScript = `-- 🧹 LIMPIEZA FINAL (BORRÓN Y CUENTA NUEVA DE VEHÍCULOS)
+-- Ejecuta esto para borrar todos los vehículos y empezar de cero.
+-- Mantiene los usuarios intactos.
+
+-- 1. BORRAR VEHÍCULOS Y LOGS (Clean Slate)
+TRUNCATE TABLE public.logs;
+TRUNCATE TABLE public.vehicles CASCADE;
+
+-- 2. REPARAR FUNCIÓN DE GESTIÓN (Asegura que puedas borrar en el futuro)
 CREATE OR REPLACE FUNCTION public.manage_vehicle_v5(payload jsonb) 
 RETURNS json AS $$
 DECLARE
   _op text; _id text; _name text; _license_plate text; _status text;
   _mileage numeric; _image_url text; _notes text; _result public.vehicles%ROWTYPE;
 BEGIN
-    _op := payload->>'op'; _id := payload->>'id'; _name := payload->>'name';
-    _license_plate := payload->>'license_plate'; _status := payload->>'status';
-    IF payload->>'mileage' IS NOT NULL AND payload->>'mileage' != '' THEN _mileage := (payload->>'mileage')::numeric; ELSE _mileage := 0; END IF;
-    _image_url := payload->>'image_url'; _notes := payload->>'notes';
+    _op := payload->>'op'; _id := payload->>'id'; 
+    _name := payload->>'name'; _license_plate := payload->>'license_plate';
+    _status := payload->>'status'; _image_url := payload->>'image_url'; _notes := payload->>'notes';
+    
+    IF payload->>'mileage' IS NOT NULL AND payload->>'mileage' != '' THEN 
+        _mileage := (payload->>'mileage')::numeric; 
+    ELSE 
+        _mileage := 0; 
+    END IF;
 
-    IF _op = 'create' THEN
+    IF _op = 'delete' THEN
+        -- Desvincular historial antes de borrar para evitar error FK
+        UPDATE public.logs SET vehicle_id = NULL WHERE vehicle_id = _id;
+        DELETE FROM public.vehicles WHERE id = _id RETURNING * INTO _result;
+        RETURN row_to_json(_result);
+    ELSIF _op = 'create' THEN
         INSERT INTO public.vehicles (id, name, license_plate, status, current_mileage, image_url, notes)
         VALUES (_id, _name, _license_plate, _status, _mileage::integer, _image_url, _notes)
         ON CONFLICT (id) DO UPDATE
@@ -342,46 +347,28 @@ BEGIN
         WHERE id = _id
         RETURNING * INTO _result;
         RETURN row_to_json(_result);
-    ELSIF _op = 'delete' THEN
-        UPDATE public.logs SET vehicle_id = NULL WHERE vehicle_id = _id;
-        DELETE FROM public.vehicles WHERE id = _id RETURNING * INTO _result;
-        RETURN row_to_json(_result);
     END IF;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE OR REPLACE FUNCTION public.create_profile(_id text, _email text, _name text, _role text) RETURNS void AS $$
-BEGIN
-  INSERT INTO public.profiles (id, email, name, role)
-  VALUES (_id, _email, _name, _role)
-  ON CONFLICT (id) DO UPDATE
-  SET email = EXCLUDED.email, name = EXCLUDED.name, role = EXCLUDED.role;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-CREATE OR REPLACE FUNCTION public.is_admin() RETURNS BOOLEAN AS $$
-BEGIN RETURN EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid()::text AND role = 'ADMIN'); END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 5. Permisos y Políticas
-GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
-GRANT ALL ON TABLE public.profiles TO postgres, anon, authenticated, service_role;
-GRANT ALL ON TABLE public.vehicles TO postgres, anon, authenticated, service_role;
-GRANT ALL ON TABLE public.logs TO postgres, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.manage_vehicle_v5 TO postgres, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.create_profile TO postgres, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.is_admin TO postgres, anon, authenticated, service_role;
-
+-- 3. PERMISOS PERMISIVOS (Evitar errores de acceso)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.logs ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Policies Profiles" ON public.profiles;
-DROP POLICY IF EXISTS "Policies Vehicles" ON public.vehicles;
-DROP POLICY IF EXISTS "Policies Logs" ON public.logs;
-CREATE POLICY "Policies Profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Policies Vehicles" ON public.vehicles FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Policies Logs" ON public.logs FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Clean Policies Profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Clean Policies Vehicles" ON public.vehicles;
+DROP POLICY IF EXISTS "Clean Policies Logs" ON public.logs;
+
+CREATE POLICY "Clean Policies Profiles" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Clean Policies Vehicles" ON public.vehicles FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Clean Policies Logs" ON public.logs FOR ALL USING (true) WITH CHECK (true);
+
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.manage_vehicle_v5 TO postgres, anon, authenticated, service_role;
+
 NOTIFY pgrst, 'reload schema';
 `;
 
@@ -395,9 +382,12 @@ DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
 `;
 
   const handleCopySql = () => {
-    const script = sqlTab === 'repair' ? sqlRepairScript : sqlSchemaScript;
+    let script = sqlRepairScript;
+    if (sqlTab === 'schema') script = sqlSchemaScript;
+    if (sqlTab === 'clean') script = sqlCleanScript;
+    
     navigator.clipboard.writeText(script);
-    alert("Código copiado. Pégalo en el Editor SQL de Supabase.");
+    alert("Código copiado. Pégalo en el Editor SQL de Supabase y dale a RUN.");
   };
 
   // Chart Data
@@ -542,28 +532,33 @@ DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
             <div className="bg-white shadow-sm rounded-xl border border-slate-200 overflow-hidden">
               <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                 <h3 className="text-lg leading-6 font-bold text-slate-800">Inventario de Vehículos</h3>
-                <button 
-                    onClick={openCreateVehicle}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 transition shadow-sm flex items-center gap-2"
-                >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                    Nuevo Vehículo
-                </button>
+                <div className="flex gap-2">
+                    {vehicles.length === 0 && (
+                         <button
+                            type="button"
+                            onClick={handleSeedData}
+                            disabled={seeding}
+                            className="text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg text-sm font-bold transition-colors border border-blue-200"
+                        >
+                            {seeding ? 'Restaurando...' : '♻️ Restaurar Vehículos'}
+                        </button>
+                    )}
+                    <button 
+                        onClick={openCreateVehicle}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 transition shadow-sm flex items-center gap-2"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                        Nuevo Vehículo
+                    </button>
+                </div>
               </div>
               {vehicles.length === 0 && !fetchError ? (
                   <div className="p-12 text-center flex flex-col items-center justify-center gap-4">
                       <div className="bg-slate-100 p-4 rounded-full text-slate-400">
                         <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                       </div>
-                      <p className="text-slate-500 font-medium">No hay vehículos registrados en la flota.</p>
-                      <button
-                            type="button"
-                            onClick={handleSeedData}
-                            disabled={seeding}
-                            className="text-blue-600 hover:text-blue-800 font-bold text-sm hover:underline"
-                        >
-                            {seeding ? 'Generando...' : 'Generar datos de prueba'}
-                        </button>
+                      <p className="text-slate-500 font-medium">No hay vehículos registrados.</p>
+                      <p className="text-sm text-slate-400">Si se borraron, usa el botón "Restaurar Vehículos" arriba.</p>
                   </div>
               ) : (
                 <ul className="divide-y divide-slate-100">
@@ -802,11 +797,13 @@ DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
             <div className="fixed inset-0 transition-opacity" aria-hidden="true" onClick={() => setShowSqlModal(false)}><div className="absolute inset-0 bg-slate-900 opacity-80 backdrop-blur-sm"></div></div>
             <div className="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
               <div className="bg-slate-50 px-4 pt-4 sm:px-6 flex border-b border-slate-200 gap-6">
+                  <button className={`pb-3 text-sm font-bold border-b-2 transition-colors ${sqlTab === 'clean' ? 'text-green-600 border-green-600' : 'text-slate-500 border-transparent hover:text-slate-700'}`} onClick={() => setSqlTab('clean')}>🧹 LIMPIEZA FINAL</button>
                   <button className={`pb-3 text-sm font-bold border-b-2 transition-colors ${sqlTab === 'repair' ? 'text-blue-600 border-blue-600' : 'text-slate-500 border-transparent hover:text-slate-700'}`} onClick={() => setSqlTab('repair')}>Reparar Permisos</button>
                   <button className={`pb-3 text-sm font-bold border-b-2 transition-colors ${sqlTab === 'schema' ? 'text-red-600 border-red-600' : 'text-slate-500 border-transparent hover:text-slate-700'}`} onClick={() => setSqlTab('schema')}>Reset de Fábrica</button>
               </div>
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                    <textarea readOnly value={sqlTab === 'repair' ? sqlRepairScript : sqlSchemaScript} className="w-full h-64 p-4 border border-slate-200 rounded-lg font-mono text-xs bg-slate-50 text-slate-700 focus:outline-none" />
+                    <textarea readOnly value={sqlTab === 'repair' ? sqlRepairScript : (sqlTab === 'clean' ? sqlCleanScript : sqlSchemaScript)} className="w-full h-64 p-4 border border-slate-200 rounded-lg font-mono text-xs bg-slate-50 text-slate-700 focus:outline-none" />
+                    {sqlTab === 'clean' && <p className="text-xs text-green-600 mt-2 font-bold">Este script borra todos los vehículos corruptos y limpia el historial para que puedas cargar los nuevos sin errores.</p>}
               </div>
               <div className="bg-slate-50 px-4 py-4 sm:px-6 sm:flex sm:flex-row-reverse gap-3">
                 <button type="button" onClick={handleCopySql} className="w-full inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-bold text-white hover:bg-blue-700 sm:w-auto sm:text-sm">Copiar SQL</button>
