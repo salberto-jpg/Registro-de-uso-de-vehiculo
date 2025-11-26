@@ -195,9 +195,20 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
 
             <h1 className="text-3xl font-bold text-white">{vehicle.name}</h1>
             <p className="text-green-100 mt-2 text-lg tracking-widest font-mono">{vehicle.licensePlate}</p>
-            <div className="mt-4 inline-block bg-white/20 backdrop-blur-sm border border-white/30 text-white px-4 py-1 rounded-full font-bold text-sm shadow-sm">
-                {vehicle.status === VehicleStatus.IN_USE ? 'EN USO (Cambio de chofer)' : 'DISPONIBLE'}
-            </div>
+            
+            {/* STATUS LABEL LOGIC */}
+            {vehicle.status === VehicleStatus.MAINTENANCE && (
+                <div className="mt-4 inline-block bg-red-600 border border-red-400 text-white px-4 py-1 rounded-full font-bold text-sm shadow-sm animate-pulse">
+                    ⚠️ EN MANTENIMIENTO
+                </div>
+            )}
+            
+            {vehicle.status === VehicleStatus.IN_USE && (
+                <div className="mt-4 inline-block bg-white/20 backdrop-blur-sm border border-white/30 text-white px-4 py-1 rounded-full font-bold text-sm shadow-sm">
+                    EN USO (Cambio de chofer)
+                </div>
+            )}
+            {/* 'DISPONIBLE' is intentionally omitted */}
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 -mt-10">
