@@ -160,13 +160,13 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
                         <p className="text-slate-600 text-lg font-medium">¿Vas a dejar el vehículo?</p>
                         
                         {/* FOTO DEL VEHICULO AL DEVOLVER */}
-                        <div className="w-full h-48 rounded-xl overflow-hidden bg-white border border-slate-200 relative flex items-center justify-center">
+                        <div className="w-full h-48 rounded-xl overflow-hidden bg-gray-100 border border-slate-200 relative flex items-center justify-center">
                             {vehicle.imageUrl ? (
                                 <img src={vehicle.imageUrl} alt={vehicle.name} className="w-full h-full object-contain" />
                             ) : (
-                                <div className="text-slate-300 flex flex-col items-center">
+                                <div className="text-slate-400 flex flex-col items-center">
                                     <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                                    <span className="text-xs">Sin imagen</span>
+                                    <span className="text-xs">Sin imagen disponible</span>
                                 </div>
                             )}
                         </div>
@@ -185,21 +185,24 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
       );
   }
 
+  const isMaintenance = vehicle.status === VehicleStatus.MAINTENANCE;
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col relative">
-        {/* Keep Green for semantic "Go/Available" action, but styled cleanly */}
-        <div className="bg-green-600 p-8 pb-16 rounded-b-[3rem] shadow-lg text-center relative">
+        {/* Header changes color based on Maintenance Status */}
+        <div className={`${isMaintenance ? 'bg-red-600' : 'bg-green-600'} p-8 pb-16 rounded-b-[3rem] shadow-lg text-center relative transition-colors duration-500`}>
              <button onClick={fetchData} className="absolute top-4 right-4 text-white/50 hover:text-white z-10 bg-black/20 p-2 rounded-full">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
              </button>
 
             <h1 className="text-3xl font-bold text-white">{vehicle.name}</h1>
-            <p className="text-green-100 mt-2 text-lg tracking-widest font-mono">{vehicle.licensePlate}</p>
+            <p className={`${isMaintenance ? 'text-red-100' : 'text-green-100'} mt-2 text-lg tracking-widest font-mono`}>{vehicle.licensePlate}</p>
             
-            {/* STATUS LABEL LOGIC */}
-            {vehicle.status === VehicleStatus.MAINTENANCE && (
-                <div className="mt-4 inline-block bg-red-600 border border-red-400 text-white px-4 py-1 rounded-full font-bold text-sm shadow-sm animate-pulse">
-                    ⚠️ EN MANTENIMIENTO
+            {/* STATUS LABELS */}
+            {isMaintenance && (
+                <div className="mt-4 inline-flex items-center gap-2 bg-white text-red-600 px-4 py-1.5 rounded-full font-bold text-sm shadow-md animate-pulse">
+                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                   MANTENIMIENTO
                 </div>
             )}
             
@@ -208,36 +211,68 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
                     EN USO (Cambio de chofer)
                 </div>
             )}
-            {/* 'DISPONIBLE' is intentionally omitted */}
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center p-6 -mt-10">
             <div className="bg-white w-full max-w-sm p-6 rounded-2xl shadow-xl text-center space-y-6">
-                <div className="text-slate-500 text-sm font-medium">
-                    Al tomar el vehículo, confirmas que tienes las llaves y estás listo para salir.
-                </div>
                 
-                {/* FOTO DEL VEHICULO AL TOMAR */}
-                <div className="w-full h-48 rounded-xl overflow-hidden bg-white border border-slate-200 relative flex items-center justify-center">
+                {/* FOTO DEL VEHICULO */}
+                <div className="w-full h-48 rounded-xl overflow-hidden bg-gray-100 border border-slate-200 relative flex items-center justify-center">
                     {vehicle.imageUrl ? (
-                        <img src={vehicle.imageUrl} alt={vehicle.name} className="w-full h-full object-contain" />
+                        <img src={vehicle.imageUrl} alt={vehicle.name} className={`w-full h-full object-contain ${isMaintenance ? 'grayscale opacity-75' : ''}`} />
                     ) : (
-                        <div className="text-slate-300 flex flex-col items-center">
+                        <div className="text-slate-400 flex flex-col items-center">
                             <svg className="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                            <span className="text-xs">Sin imagen</span>
+                            <span className="text-xs">Sin imagen disponible</span>
                         </div>
                     )}
                 </div>
 
-                <button
-                    onClick={handleTakeVehicle}
-                    disabled={actionLoading}
-                    className="w-full py-5 bg-green-600 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-green-700 transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"
-                >
-                    {actionLoading ? 'Asignando...' : <span>TOMAR VEHÍCULO</span>}
-                </button>
+                {isMaintenance ? (
+                    <div className="space-y-4">
+                        <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-left">
+                            <h3 className="text-red-800 font-bold text-lg mb-1 flex items-center gap-2">
+                                ⛔ Vehículo Bloqueado
+                            </h3>
+                            <p className="text-red-600 text-sm leading-relaxed mb-3">
+                                Este vehículo se encuentra en reparación o servicio técnico y no puede ser utilizado.
+                            </p>
+                            
+                            {vehicle.notes ? (
+                                <div className="bg-white rounded-lg p-3 border border-red-100 shadow-sm">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Detalle del Supervisor:</span>
+                                    <p className="text-slate-800 text-sm font-medium">{vehicle.notes}</p>
+                                </div>
+                            ) : (
+                                <p className="text-xs text-red-400 italic">Sin detalles adicionales registrados.</p>
+                            )}
+                        </div>
+                        <button
+                            onClick={handleBack}
+                            className="w-full py-4 bg-slate-800 text-white text-lg font-bold rounded-xl shadow hover:bg-black transition-colors"
+                        >
+                            Volver al Inicio
+                        </button>
+                    </div>
+                ) : (
+                    <>
+                        <div className="text-slate-500 text-sm font-medium">
+                            Al tomar el vehículo, confirmas que tienes las llaves y estás listo para salir.
+                        </div>
+
+                        <button
+                            onClick={handleTakeVehicle}
+                            disabled={actionLoading}
+                            className="w-full py-5 bg-green-600 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-green-700 transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"
+                        >
+                            {actionLoading ? 'Asignando...' : <span>TOMAR VEHÍCULO</span>}
+                        </button>
+                    </>
+                )}
             </div>
-            <button onClick={handleBack} className="mt-8 text-slate-400 text-sm hover:text-slate-600 font-medium">Cancelar</button>
+            {!isMaintenance && (
+                <button onClick={handleBack} className="mt-8 text-slate-400 text-sm hover:text-slate-600 font-medium">Cancelar</button>
+            )}
         </div>
     </div>
   );

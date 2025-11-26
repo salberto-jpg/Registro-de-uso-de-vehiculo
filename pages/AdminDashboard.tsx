@@ -33,6 +33,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
   const [vFormMileage, setVFormMileage] = useState(0);
   const [vFormStatus, setVFormStatus] = useState<VehicleStatus>(VehicleStatus.AVAILABLE);
   const [vFormImage, setVFormImage] = useState('');
+  const [vFormNotes, setVFormNotes] = useState('');
   
   // User Form
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -79,6 +80,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
     setVFormMileage(0);
     setVFormStatus(VehicleStatus.AVAILABLE);
     setVFormImage('');
+    setVFormNotes('');
     setShowVehicleModal(true);
   };
 
@@ -89,6 +91,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
     setVFormMileage(v.currentMileage);
     setVFormStatus(v.status);
     setVFormImage(v.imageUrl || '');
+    setVFormNotes(v.notes || '');
     setShowVehicleModal(true);
   };
 
@@ -102,7 +105,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                 licensePlate: vFormPlate,
                 currentMileage: vFormMileage,
                 status: vFormStatus,
-                imageUrl: vFormImage
+                imageUrl: vFormImage,
+                notes: vFormNotes
             });
             alert("¡Vehículo actualizado correctamente!");
         } else {
@@ -111,7 +115,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user }) => {
                 licensePlate: vFormPlate,
                 currentMileage: vFormMileage, 
                 status: vFormStatus,
-                imageUrl: vFormImage
+                imageUrl: vFormImage,
+                notes: vFormNotes
             });
             alert("¡Vehículo creado correctamente!");
         }
@@ -730,6 +735,18 @@ DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
                             <div><label className="block text-sm font-bold text-slate-700 mb-1">Kilometraje</label><input required type="number" value={vFormMileage} onChange={e => setVFormMileage(Number(e.target.value))} className="w-full border border-slate-300 p-2.5 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" /></div>
                         </div>
                         <div><label className="block text-sm font-bold text-slate-700 mb-1">Imagen (URL)</label><input value={vFormImage} onChange={e => setVFormImage(e.target.value)} className="w-full border border-slate-300 p-2.5 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" placeholder="https://..." /></div>
+                        
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">Notas / Detalle de Mantenimiento</label>
+                            <textarea 
+                                value={vFormNotes} 
+                                onChange={e => setVFormNotes(e.target.value)} 
+                                className="w-full border border-slate-300 p-2.5 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none" 
+                                placeholder="Escribe aquí los detalles del servicio o reparación..."
+                                rows={3}
+                            />
+                        </div>
+
                         {editingVehicle && (
                              <div><label className="block text-sm font-bold text-slate-700 mb-1">Estado</label>
                                 <select value={vFormStatus} onChange={e => setVFormStatus(e.target.value as VehicleStatus)} className="w-full border border-slate-300 p-2.5 rounded-lg shadow-sm bg-white">
