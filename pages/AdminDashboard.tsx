@@ -607,6 +607,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onOpenScan
   const vehiclesInUse = vehicles.filter(v => v.status === VehicleStatus.IN_USE).length;
   const vehiclesAvailable = vehicles.filter(v => v.status === VehicleStatus.AVAILABLE).length;
 
+  // Lógica de separación de logs
+  const activeLogs = logs.filter(l => !l.endTime);
+  const historyLogs = logs.filter(l => !!l.endTime);
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="print:hidden">
@@ -842,74 +846,124 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onOpenScan
           )}
 
           {view === 'logs' && (
-            <div className="flex flex-col">
-              <div className="-my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
-                <div className="py-2 align-middle inline-block min-w-full sm:px-6 lg:px-8">
-                  <div className="shadow-sm border border-slate-200 sm:rounded-xl overflow-hidden">
-                    <table className="min-w-full divide-y divide-slate-200">
-                      <thead className="bg-slate-50">
-                        <tr>
-                          <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Vehículo</th>
-                          <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Conductor</th>
-                          <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Salida</th>
-                          <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Retorno</th>
-                          <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Duración</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-slate-200">
-                        {logs.length === 0 && !fetchError ? (
-                             <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-500">No hay historial registrado</td></tr>
-                        ) : logs.map((log) => {
-                          const isOngoing = !log.endTime;
-                          const startDate = new Date(log.startTime);
-                          const today = new Date();
-                          
-                          const isDifferentDay = startDate.getDate() !== today.getDate() || 
+            <div className="flex flex-col gap-10">
+              {/* SECCIÓN SUPERIOR: VIAJES EN CURSO (ESTILO TARJETAS) */}
+              <section>
+                <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <span className="w-2 h-6 bg-blue-500 rounded-sm"></span>
+                    Viajes en Curso
+                    <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-1 rounded-full ml-2">
+                        {activeLogs.length} Activos
+                    </span>
+                </h3>
+
+                {activeLogs.length === 0 ? (
+                    <div className="bg-white p-8 rounded-xl border border-slate-200 text-center shadow-sm">
+                        <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                        </div>
+                        <p className="text-slate-500 font-medium">No hay vehículos en uso actualmente.</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                        {activeLogs.map(log => {
+                            const vehicle = vehicles.find(v => v.id === log.vehicleId);
+                            const startDate = new Date(log.startTime);
+                            const today = new Date();
+                            const isDifferentDay = startDate.getDate() !== today.getDate() || 
                                                  startDate.getMonth() !== today.getMonth() || 
                                                  startDate.getFullYear() !== today.getFullYear();
 
-                          const isOverdue = isOngoing && isDifferentDay;
+                            // Estilos dinámicos según urgencia
+                            const borderColor = isDifferentDay ? 'border-red-400' : 'border-blue-400';
+                            const bgColor = isDifferentDay ? 'bg-red-50' : 'bg-white';
+                            const badgeColor = isDifferentDay ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700';
+                            
+                            return (
+                                <div key={log.id} className={`rounded-xl border-l-4 ${borderColor} ${bgColor} shadow-sm p-5 relative overflow-hidden group hover:shadow-md transition-shadow`}>
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div>
+                                            <h4 className="font-bold text-slate-900 text-lg leading-tight">{vehicle?.name || 'Vehículo desconocido'}</h4>
+                                            <p className="font-mono text-sm text-slate-500 mt-1">{vehicle?.licensePlate}</p>
+                                        </div>
+                                        <div className={`px-2 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${badgeColor}`}>
+                                            {isDifferentDay ? '⚠️ NO DEVUELTO' : 'EN CURSO'}
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold">
+                                            {log.driverName.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-slate-400 uppercase font-bold">Conductor</p>
+                                            <p className="text-sm font-semibold text-slate-800">{log.driverName}</p>
+                                        </div>
+                                    </div>
 
-                          let rowClass = "hover:bg-slate-50";
-                          if (isOverdue) rowClass = "bg-red-50 hover:bg-red-100 border-l-4 border-red-500";
-                          else if (isOngoing) rowClass = "bg-blue-50 hover:bg-blue-100";
-
-                          return (
-                            <tr key={log.id} className={rowClass}>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-slate-800">
-                                {vehicles.find(v => v.id === log.vehicleId)?.name || 'Unknown'}
-                                {isOverdue && <span className="block text-[10px] text-red-600 font-extrabold uppercase mt-1">⚠️ No Devuelto</span>}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{log.driverName}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                                  {new Date(log.startTime).toLocaleDateString()} <span className="text-xs text-slate-400">{new Date(log.startTime).toLocaleTimeString()}</span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                                {log.endTime ? (
-                                    <span>{new Date(log.endTime).toLocaleDateString()} <span className="text-xs text-slate-400">{new Date(log.endTime).toLocaleTimeString()}</span></span>
-                                ) : (
-                                    isOverdue ? (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-800 animate-pulse">
-                                            PENDIENTE (Días anteriores)
-                                        </span>
-                                    ) : (
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                            En curso
-                                        </span>
-                                    )
-                                )}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono">
-                                {calculateDuration(log.startTime, log.endTime)}
-                              </td>
-                            </tr>
-                          );
+                                    <div className="border-t border-slate-200/60 pt-3 flex justify-between items-center text-sm">
+                                        <div>
+                                            <p className="text-slate-400 text-xs">Inicio</p>
+                                            <p className="font-medium text-slate-700">{startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} <span className="text-xs text-slate-400">{startDate.toLocaleDateString()}</span></p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-slate-400 text-xs">Duración</p>
+                                            <p className="font-bold text-slate-800">{calculateDuration(log.startTime)}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
                         })}
-                      </tbody>
-                    </table>
-                  </div>
+                    </div>
+                )}
+              </section>
+
+              {/* SECCIÓN INFERIOR: HISTORIAL DE VIAJES CERRADOS (TABLA LIMPIA) */}
+              <section>
+                 <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <span className="w-2 h-6 bg-slate-300 rounded-sm"></span>
+                    Historial Cerrado
+                </h3>
+                
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-200">
+                        <thead className="bg-slate-50">
+                            <tr>
+                            <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Vehículo</th>
+                            <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Conductor</th>
+                            <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Salida</th>
+                            <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Retorno</th>
+                            <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Duración</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-slate-200">
+                            {historyLogs.length === 0 ? (
+                                <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">No hay registros históricos aún.</td></tr>
+                            ) : historyLogs.map((log) => (
+                            <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-700">
+                                    {vehicles.find(v => v.id === log.vehicleId)?.name || 'Unknown'}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{log.driverName}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                                    {new Date(log.startTime).toLocaleDateString()} <span className="text-xs text-slate-400">{new Date(log.startTime).toLocaleTimeString()}</span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                                    {log.endTime && (
+                                        <span>{new Date(log.endTime).toLocaleDateString()} <span className="text-xs text-slate-400">{new Date(log.endTime).toLocaleTimeString()}</span></span>
+                                    )}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 font-mono bg-slate-50/50">
+                                    {calculateDuration(log.startTime, log.endTime)}
+                                </td>
+                            </tr>
+                            ))}
+                        </tbody>
+                        </table>
+                    </div>
                 </div>
-              </div>
+              </section>
             </div>
           )}
 
