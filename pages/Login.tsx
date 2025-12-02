@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { signInWithEmail, resetPassword } from '../services/db';
+import { signInWithEmail, resetPassword, getErrorMessage } from '../services/db';
 import { User, UserRole } from '../types';
 import { isSupabaseConfigured, setupSupabase, disconnectSupabase } from '../services/supabase';
 
@@ -46,7 +46,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Error de conexión.');
+      const msg = getErrorMessage(err);
+      setError(msg || 'Error de conexión.');
     } finally {
       setLoading(false);
     }
@@ -67,24 +68,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         setError(error.message);
       } else {
         setMsg(`✅ Se ha enviado un enlace a tu correo.`);
-        
-        if (redirectTo) {
-           setTimeout(() => {
-               const currentHost = window.location.host;
-               setMsg(prev => 
-                 prev + `\n\n⚠️ IMPORTANTE (Modo Prueba):` +
-                 `\nSupabase probablemente envíe un enlace a "localhost" que dará error.` +
-                 `\n\nSI VES UN ERROR DE CONEXIÓN:` +
-                 `\n1. Copia el enlace del error o del correo.` +
-                 `\n2. Pégalo en el navegador.` +
-                 `\n3. Reemplaza "localhost:3000" por la dirección actual de esta página:` +
-                 `\n${currentHost}`
-               );
-           }, 1000);
-        }
       }
     } catch (e: any) {
-      setError(e.message);
+      const msg = getErrorMessage(e);
+      setError(msg);
     } finally {
       setLoading(false);
     }

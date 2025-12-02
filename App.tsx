@@ -53,6 +53,7 @@ const App: React.FC = () => {
   const [route, setRoute] = useState<string>(window.location.hash);
   const [manualId, setManualId] = useState('');
   const [loadingMessage, setLoadingMessage] = useState('Cargando sistema...');
+  const [showScanner, setShowScanner] = useState(false); // New state to toggle scanner for admin
   
   const [isRecovery, setIsRecovery] = useState(() => {
       const h = window.location.hash;
@@ -127,6 +128,7 @@ const App: React.FC = () => {
           if (event === 'SIGNED_OUT') {
               setUser(null);
               setLoading(false);
+              setShowScanner(false);
           } else if (event === 'SIGNED_IN') {
                // Si entra (incluso por link de correo), intentamos recargar el perfil
                // Esto es crucial para la confirmación de correo
@@ -214,14 +216,21 @@ const App: React.FC = () => {
   }
 
   if (vehicleId) {
+    // Both Drivers and Admins can see the vehicle view if ID exists
     return <DriverView user={user} vehicleId={vehicleId} onLogout={() => { window.location.hash = ''; }} />;
   }
 
-  if (user.role === UserRole.ADMIN || user.role === UserRole.SUPERVISOR) {
-    return <AdminDashboard user={user} />;
+  const isAdminOrSupervisor = user.role === UserRole.ADMIN || user.role === UserRole.SUPERVISOR;
+
+  // Render Dashboard if Admin/Supervisor AND NOT in scanner mode
+  if (isAdminOrSupervisor && !showScanner) {
+    return <AdminDashboard user={user} onOpenScanner={() => setShowScanner(true)} />;
   }
 
-  if (user.role === UserRole.DRIVER) {
+  // Render Driver/Scanner View if:
+  // 1. User is DRIVER
+  // 2. User is ADMIN/SUPERVISOR AND showScanner is true
+  if (user.role === UserRole.DRIVER || (isAdminOrSupervisor && showScanner)) {
     return (
       <div className="min-h-screen bg-[#0f1115] flex flex-col font-sans">
           
@@ -239,16 +248,26 @@ const App: React.FC = () => {
               </h1>
             </div>
             
-            <button 
-                onClick={async () => { 
-                    setLoading(true);
-                    await signOut(); 
-                    window.location.reload(); 
-                }} 
-                className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs font-semibold px-4 py-2 rounded-full transition-all active:scale-95 backdrop-blur-md"
-            >
-                Salir
-            </button>
+            {/* If Admin, show Back button. If Driver, show Logout */}
+            {isAdminOrSupervisor ? (
+                <button 
+                    onClick={() => setShowScanner(false)} 
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs font-semibold px-4 py-2 rounded-full transition-all active:scale-95 backdrop-blur-md flex items-center gap-1"
+                >
+                    <span>← Volver</span>
+                </button>
+            ) : (
+                <button 
+                    onClick={async () => { 
+                        setLoading(true);
+                        await signOut(); 
+                        window.location.reload(); 
+                    }} 
+                    className="bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs font-semibold px-4 py-2 rounded-full transition-all active:scale-95 backdrop-blur-md"
+                >
+                    Salir
+                </button>
+            )}
           </header>
 
           <main className="flex-1 flex flex-col items-center justify-start p-4 text-center max-w-md mx-auto w-full space-y-6">

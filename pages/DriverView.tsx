@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { getVehicle, getActiveLog, startTrip, endTrip, getUserActiveTrip } from '../services/db';
+import { getVehicle, getActiveLog, startTrip, endTrip, getUserActiveTrip, getErrorMessage } from '../services/db';
 import { Vehicle, VehicleLog, User, VehicleStatus } from '../types';
 
 interface DriverViewProps {
@@ -41,23 +41,30 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
-    const v = await getVehicle(vehicleId);
-    setVehicle(v || null);
+    try {
+        const v = await getVehicle(vehicleId);
+        setVehicle(v || null);
 
-    const vLog = await getActiveLog(vehicleId);
-    setVehicleActiveLog(vLog);
+        const vLog = await getActiveLog(vehicleId);
+        setVehicleActiveLog(vLog);
 
-    const uLog = await getUserActiveTrip(user.id);
-    setUserActiveLog(uLog);
+        const uLog = await getUserActiveTrip(user.id);
+        setUserActiveLog(uLog);
 
-    if (uLog && v && uLog.vehicleId !== v.id) {
-        const otherV = await getVehicle(uLog.vehicleId);
-        if (otherV) setOtherVehicleName(otherV.name);
+        if (uLog && v && uLog.vehicleId !== v.id) {
+            const otherV = await getVehicle(uLog.vehicleId);
+            if (otherV) setOtherVehicleName(otherV.name);
+        }
+    } catch (e) {
+        console.error("Error fetching vehicle data", e);
+        setErrorMessage("Error de conexión al cargar datos.");
+    } finally {
+        setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
@@ -74,18 +81,34 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
 
   const handleTakeVehicle = async () => {
     if (!vehicle) return;
+    setErrorMessage(null);
     setActionLoading(true);
-    await startTrip(vehicle.id, user);
-    setActionLoading(false);
-    handleSuccess('¡Vehículo Asignado!');
+    try {
+        await startTrip(vehicle.id, user);
+        handleSuccess('¡Vehículo Asignado!');
+    } catch (error: any) {
+        console.error(error);
+        const msg = getErrorMessage(error);
+        setErrorMessage(msg);
+    } finally {
+        setActionLoading(false);
+    }
   };
 
   const handleReturnVehicle = async () => {
     if (!vehicle) return;
+    setErrorMessage(null);
     setActionLoading(true);
-    await endTrip(vehicle.id);
-    setActionLoading(false);
-    handleSuccess('¡Vehículo Devuelto!');
+    try {
+        await endTrip(vehicle.id);
+        handleSuccess('¡Vehículo Devuelto!');
+    } catch (error: any) {
+        console.error(error);
+        const msg = getErrorMessage(error);
+        setErrorMessage(msg);
+    } finally {
+        setActionLoading(false);
+    }
   };
 
   const handleBack = () => {
@@ -143,7 +166,6 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                  </button>
 
-                 {/* Updated to Blue Theme */}
                  <div className="bg-gradient-to-br from-blue-700 to-blue-500 p-8 pb-24 rounded-b-[3rem] shadow-lg text-center">
                     <h1 className="text-3xl font-bold text-white">{vehicle.name}</h1>
                     <p className="text-blue-100 mt-2 text-lg tracking-widest font-mono">{vehicle.licensePlate}</p>
@@ -159,7 +181,13 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
                      <div className="bg-white w-full max-w-sm p-6 rounded-2xl shadow-xl text-center space-y-6">
                         <p className="text-slate-600 text-lg font-medium">¿Vas a dejar el vehículo?</p>
                         
-                        {/* FOTO DEL VEHICULO AL DEVOLVER */}
+                        {/* Mensaje de Error */}
+                        {errorMessage && (
+                            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-200 animate-pulse">
+                                ⚠️ {errorMessage}
+                            </div>
+                        )}
+
                         <div className="w-full h-48 rounded-xl overflow-hidden bg-gray-100 border border-slate-200 relative flex items-center justify-center">
                             {vehicle.imageUrl ? (
                                 <img src={vehicle.imageUrl} alt={vehicle.name} className="w-full h-full object-contain" />
@@ -174,7 +202,7 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
                         <button
                             onClick={handleReturnVehicle}
                             disabled={actionLoading}
-                            className="w-full py-5 bg-slate-900 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-black transform transition hover:scale-105 active:scale-95 border-b-4 border-slate-700 active:border-b-0 active:translate-y-1"
+                            className="w-full py-5 bg-slate-900 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-black transform transition hover:scale-105 active:scale-95 border-b-4 border-slate-700 active:border-b-0 active:translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {actionLoading ? 'Procesando...' : 'DEVOLVER VEHÍCULO'}
                         </button>
@@ -189,7 +217,6 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col relative">
-        {/* Header changes color based on Maintenance Status */}
         <div className={`${isMaintenance ? 'bg-red-600' : 'bg-green-600'} p-8 pb-16 rounded-b-[3rem] shadow-lg text-center relative transition-colors duration-500`}>
              <button onClick={fetchData} className="absolute top-4 right-4 text-white/50 hover:text-white z-10 bg-black/20 p-2 rounded-full">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -198,7 +225,6 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
             <h1 className="text-3xl font-bold text-white">{vehicle.name}</h1>
             <p className={`${isMaintenance ? 'text-red-100' : 'text-green-100'} mt-2 text-lg tracking-widest font-mono`}>{vehicle.licensePlate}</p>
             
-            {/* STATUS LABELS */}
             {isMaintenance && (
                 <div className="mt-4 inline-flex items-center gap-2 bg-white text-red-600 px-4 py-1.5 rounded-full font-bold text-sm shadow-md animate-pulse">
                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
@@ -216,7 +242,13 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
         <div className="flex-1 flex flex-col items-center justify-center p-6 -mt-10">
             <div className="bg-white w-full max-w-sm p-6 rounded-2xl shadow-xl text-center space-y-6">
                 
-                {/* FOTO DEL VEHICULO */}
+                {/* Mensaje de Error en la pantalla de Tomar */}
+                {errorMessage && (
+                    <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold border border-red-200 animate-pulse">
+                        ⚠️ {errorMessage}
+                    </div>
+                )}
+
                 <div className="w-full h-48 rounded-xl overflow-hidden bg-gray-100 border border-slate-200 relative flex items-center justify-center">
                     {vehicle.imageUrl ? (
                         <img src={vehicle.imageUrl} alt={vehicle.name} className={`w-full h-full object-contain ${isMaintenance ? 'grayscale opacity-75' : ''}`} />
@@ -263,7 +295,7 @@ export const DriverView: React.FC<DriverViewProps> = ({ user, vehicleId, onLogou
                         <button
                             onClick={handleTakeVehicle}
                             disabled={actionLoading}
-                            className="w-full py-5 bg-green-600 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-green-700 transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2 border-b-4 border-green-800 active:border-b-0 active:translate-y-1"
+                            className="w-full py-5 bg-green-600 text-white text-xl font-bold rounded-xl shadow-lg hover:bg-green-700 transform transition hover:scale-105 active:scale-95 flex items-center justify-center gap-2 border-b-4 border-green-800 active:border-b-0 active:translate-y-1 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {actionLoading ? 'Asignando...' : <span>TOMAR VEHÍCULO</span>}
                         </button>

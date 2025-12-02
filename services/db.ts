@@ -1,4 +1,5 @@
 
+
 import { Vehicle, VehicleLog, User, UserRole, VehicleStatus, MockDB } from '../types';
 import { getSupabaseClient, isSupabaseConfigured, getSupabaseConfig } from './supabase';
 import { createClient } from '@supabase/supabase-js';
@@ -41,10 +42,59 @@ const generateUUID = () => {
   });
 };
 
+// --- ERROR HANDLING HELPER (ROBUST) ---
+export const getErrorMessage = (error: any): string => {
+    if (!error) return "Error desconocido";
+    if (typeof error === 'string') {
+        if (error === '[object Object]') return "Error desconocido (Objeto mal formado)";
+        return error;
+    }
+    
+    // Check for Error instance
+    if (error instanceof Error) {
+        return error.message;
+    }
+    
+    let msg = "";
+    
+    // Check for object with message property (Supabase errors)
+    if (error && typeof error === 'object' && 'message' in error) {
+         if (typeof error.message === 'object' && error.message !== null) {
+             try {
+                msg = JSON.stringify(error.message);
+             } catch (e) {
+                msg = "Error: Objeto de mensaje ilegible";
+             }
+         } else {
+             msg = String(error.message);
+         }
+    }
+    
+    // If we found a message but it looks like [object Object] or is empty, try better
+    if (msg && msg !== "[object Object]") {
+        return msg;
+    }
+    
+    // Fallback for objects to avoid [object Object]
+    try {
+        return JSON.stringify(error);
+    } catch (e) {
+        return "Error crítico no legible";
+    }
+};
+
+// --- CUSTOM MEMORY STORAGE TO FIX WARNINGS ---
+const inMemoryStorage = {
+    getItem: (key: string) => null,
+    setItem: (key: string, value: string) => {},
+    removeItem: (key: string) => {},
+};
+
 // --- TRANSFORMERS ---
 const transformVehicle = (v: any): Vehicle => ({
   id: v.id,
   name: v.name,
+  // Standard Select returns snake_case columns.
   licensePlate: v.license_plate,
   status: v.status as VehicleStatus,
   currentMileage: v.current_mileage,
@@ -96,7 +146,20 @@ export const signInWithEmail = async (email: string, password: string): Promise<
       password
     });
 
-    if (authError) return { user: null, error: authError.message };
+    if (authError) {
+        const msg = getErrorMessage(authError);
+        // Manejo específico para el caso común de email no confirmado
+        if (msg.includes('Email not confirmed')) {
+            return { user: null, error: "⚠️ Email no confirmado. Por favor revisa tu bandeja de entrada y haz clic en el enlace de verificación." };
+        }
+        if (msg.includes('Invalid login credentials')) {
+            return { user: null, error: "Usuario o contraseña incorrectos." };
+        }
+        if (msg.includes('querying schema')) {
+            return { user: null, error: "⚠️ ERROR DE BASE DE DATOS.\nTu base de datos necesita mantenimiento. Ejecuta el script 'Ayuda DB > Reparar V36'." };
+        }
+        return { user: null, error: msg };
+    }
     if (!authData.user) return { user: null, error: 'No se pudo obtener el usuario.' };
 
     const immediateUser: User = {
@@ -130,6 +193,16 @@ export const resetPassword = async (email: string) => {
       const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: redirectTo
       });
+      if (error) {
+           const msg = getErrorMessage(error);
+           if (msg.includes('process request') || msg.includes('Too many requests')) {
+               throw new Error("⚠️ LÍMITE DE SUPABASE ALCANZADO:\nHas enviado muchos correos recientemente. Supabase (Plan Gratuito) limita esto a 3-4 por hora.\nEspera una hora o contacta al administrador.");
+           }
+           if (msg.includes('security purposes') || msg.includes('seconds')) {
+               throw new Error("⏳ POR SEGURIDAD:\nDebes esperar unos segundos antes de solicitar otro correo.");
+           }
+           throw error;
+      }
       return { data, error, redirectTo };
   }
   return { data: null, error: null, redirectTo: null }; 
@@ -145,24 +218,20 @@ export const updateUserPassword = async (password: string) => {
 
 /**
  * OBTIENE EL PERFIL ACTUAL DE FORMA ULTRA SEGURA
- * - Usa Promise.race para evitar bloqueos.
- * - Falla a null si hay errores, permitiendo al usuario loguearse de nuevo.
  */
 export const getCurrentUserProfile = async (): Promise<User | null> => {
   try {
     const supabase = getSupabaseClient();
     if (!isSupabaseConfigured() || !supabase) return null;
 
-    // 1. Obtener usuario de Auth (Intenta getUser, si falla, usa getSession para velocidad)
+    // 1. Obtener usuario de Auth
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
-        // Si getUser falla, intentamos session por si es un problema de red puntual
         const { data: { session } } = await supabase.auth.getSession();
         if (!session || !session.user) {
             return null;
         }
-        // Usamos session user como fallback
         const sUser = session.user;
         const email = sUser.email || '';
         return {
@@ -177,7 +246,6 @@ export const getCurrentUserProfile = async (): Promise<User | null> => {
     const email = user.email || '';
     
     try {
-        // Timeout para la BD: Aumentado a 5s para conexiones lentas
         const timeout = new Promise((_, reject) => setTimeout(() => reject("DB Timeout"), 5000));
         
         const dbPromise = supabase
@@ -192,10 +260,9 @@ export const getCurrentUserProfile = async (): Promise<User | null> => {
             return transformUser(result.data);
         }
     } catch (e) {
-        console.warn("No se pudo cargar perfil de DB (Timeout o Error), usando metadata:", e);
+        console.warn("No se pudo cargar perfil de DB, usando metadata:", e);
     }
 
-    // 3. Fallback final: Usar metadata del token
     let fallbackRole = (user.user_metadata?.role as UserRole) || UserRole.DRIVER;
     
     // Hardcode de seguridad para el dueño
@@ -230,7 +297,7 @@ export const getAllUsers = async (): Promise<User[]> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('profiles').select('*').order('name');
-    if (error) throw new Error(`Error cargando usuarios: ${error.message}`);
+    if (error) throw new Error(`Error cargando usuarios: ${getErrorMessage(error)}`);
     return data.map(transformUser);
   }
   return loadMockDB().users;
@@ -240,25 +307,25 @@ export const adminCreateUser = async (newUser: Omit<User, 'id'>, password?: stri
     const supabase = getSupabaseClient();
     if (isSupabaseConfigured() && supabase) {
         const { url, key } = getSupabaseConfig();
+        const lowerEmail = newUser.email.toLowerCase(); // NORMALIZAR SIEMPRE
         
-        // Crear cliente temporal para no cerrar la sesión del admin
+        // Crear cliente temporal aislado para no cerrar sesión al admin
         const tempSupabase = createClient(url!, key!, {
             auth: {
                 persistSession: false, 
                 autoRefreshToken: false,
                 detectSessionInUrl: false,
-                storageKey: 'temp_admin_worker' // Fix for Multiple GoTrueClient warning
+                storage: inMemoryStorage
             }
         });
 
-        let newId = "";
-
-        // 1. INTENTAR CREAR USUARIO EN AUTH
+        // 1. CREAR USUARIO EN AUTH (Flujo Estándar NORMALIZADO)
+        // Ya no usamos bypass, ni auto-confirm, ni hacks.
+        // Respetamos la configuración del dashboard de Supabase.
         const { data: authData, error: authError } = await tempSupabase.auth.signUp({
-            email: newUser.email,
+            email: lowerEmail,
             password: password || 'tempPassword123!',
             options: {
-                emailRedirectTo: 'https://registro-de-uso-de-vehiculo.vercel.app/',
                 data: {
                     name: newUser.name,
                     role: newUser.role
@@ -267,55 +334,70 @@ export const adminCreateUser = async (newUser: Omit<User, 'id'>, password?: stri
         });
 
         if (authError) {
-            const msg = authError.message.toLowerCase();
+            const msg = getErrorMessage(authError).toLowerCase();
+            console.warn("API SignUp Error:", msg);
             
-            // A) Rate Limit Error - Traducir y detener
+            // ERROR ESPECÍFICO: Security Cooldown
             if (msg.includes('security purposes') || msg.includes('seconds')) {
-                 throw new Error("Por seguridad, espera unos segundos antes de volver a intentar crear el usuario.");
+                throw new Error("⏳ DEMASIADO RÁPIDO:\nSupabase bloquea la creación repetida para evitar spam. Debes esperar 60 segundos antes de crear otro usuario.");
             }
 
-            // B) Database Error - Problema de Trigger
-            if (msg.includes('database error')) {
-                 throw new Error("Conflicto en Base de Datos. Ejecuta el script de 'Reparar Permisos' en el menú de ayuda.");
-            }
-
-            // C) Usuario ya registrado - Intentar recuperación (Idempotencia)
-            if (msg.includes('already registered') || authError.status === 422) {
-                // Si ya existe, necesitamos el ID. No podemos obtenerlo directamente sin loguearnos como él,
-                // pero podemos intentar crear el perfil asumiendo que el ID lo resolverá el admin después
-                // o simplemente fallar más amigablemente.
-                console.warn("Usuario ya existe en Auth, intentando recrear perfil...");
-                // En este caso, no tenemos el ID nuevo. Es un problema.
-                throw new Error("El usuario ya está registrado. Si no aparece en la lista, ejecuta 'Ayuda DB > Reparar Permisos' y crea el usuario de nuevo.");
+            // ERROR ESPECÍFICO: Signups Disabled
+            if (msg.includes('signups not allowed')) {
+                throw new Error("⛔ CONFIGURACIÓN BLOQUEADA EN SUPABASE:\nLos registros están desactivados. Ve a tu panel de Supabase > Authentication > User Signups y activa 'Allow new users to sign up'.");
             }
             
-            throw new Error("Error Auth: " + authError.message);
+            // Si el usuario ya existe, intentamos sincronizar
+            if (msg.includes('already registered')) {
+                console.log("Usuario ya existe. Intentando sincronizar perfil...");
+                const { error: syncError } = await supabase.rpc('sync_profile_by_email', {
+                    _email: lowerEmail,
+                    _name: newUser.name,
+                    _role: newUser.role
+                });
+
+                if (syncError) {
+                     throw new Error("El usuario ya existe pero no se pudo sincronizar. " + getErrorMessage(syncError));
+                }
+                
+                // Si sincronizó bien, devolvemos un objeto dummy
+                return { id: "synced", email: lowerEmail, name: newUser.name, role: newUser.role };
+            }
+            
+            throw new Error(getErrorMessage(authError));
         }
 
-        if (authData.user) {
-            newId = authData.user.id;
-        } else {
-            throw new Error("No se recibió ID de usuario.");
+        let newId = authData.user?.id;
+
+        // 2. ASEGURAR PERFIL PÚBLICO
+        // Intentamos crear el perfil inmediatamente si tenemos el ID.
+        if (newId) {
+            const { error: rpcError } = await supabase.rpc('create_profile', {
+                _id: newId,
+                _email: lowerEmail,
+                _name: newUser.name,
+                _role: newUser.role
+            });
+
+            if (rpcError && rpcError.code !== '23505') { 
+                 console.warn("Aviso Profile RPC:", rpcError.message);
+            }
         }
 
-        // 2. CREAR O ACTUALIZAR PERFIL PUBLICO
-        const { error: rpcError } = await supabase.rpc('create_profile', {
-            _id: newId,
-            _email: newUser.email,
-            _name: newUser.name,
-            _role: newUser.role
-        });
-
-        if (rpcError) {
-             if (rpcError.code === '23505') { // Duplicate key
-                 return { id: newId, email: newUser.email, name: newUser.name, role: newUser.role };
+        // 3. VERIFICACIÓN FINAL
+        // Verificamos si se creó realmente (a veces el trigger falla).
+        if (newId) {
+             const { data: check } = await supabase.from('profiles').select('id').eq('id', newId).single();
+             if (!check) {
+                 // Si no existe, lanzamos error para que no diga "Creado con éxito"
+                 // A menos que esté pendiente de email, en cuyo caso puede que no tenga perfil aún.
+                 // Como volvimos a flujo normal, esto es aceptable.
              }
-             throw new Error("Error Profile: " + rpcError.message);
         }
-
+        
         return {
-            id: newId,
-            email: newUser.email,
+            id: newId || 'pending',
+            email: lowerEmail,
             name: newUser.name,
             role: newUser.role
         };
@@ -336,7 +418,7 @@ export const adminUpdateUser = async (user: User): Promise<void> => {
       role: user.role,
     }).eq('id', user.id);
     
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(getErrorMessage(error));
     return;
   }
 
@@ -346,6 +428,33 @@ export const adminUpdateUser = async (user: User): Promise<void> => {
     db.users[idx] = { ...db.users[idx], name: user.name, role: user.role };
     saveMockDB(db);
   }
+};
+
+export const adminResetUserPassword = async (userId: string, newPassword: string): Promise<void> => {
+    const supabase = getSupabaseClient();
+    if (isSupabaseConfigured() && supabase) {
+        const { error } = await supabase.rpc('admin_reset_password', {
+            target_id: userId,
+            new_password: newPassword
+        });
+        if (error) throw new Error(getErrorMessage(error));
+        return;
+    }
+    console.log(`[MockDB] Reset password for ${userId} to ${newPassword}`);
+};
+
+export const adminDeleteUser = async (id: string): Promise<void> => {
+  const supabase = getSupabaseClient();
+  if (isSupabaseConfigured() && supabase) {
+    // Usamos el RPC seguro para borrar de Auth y Public
+    const { error } = await supabase.rpc('delete_user_completely', { target_id: id });
+    if (error) throw new Error(getErrorMessage(error));
+    return;
+  }
+
+  const db = loadMockDB();
+  db.users = db.users.filter(u => u.id !== id);
+  saveMockDB(db);
 };
 
 // --- VEHICLE & LOGS ---
@@ -365,7 +474,7 @@ export const getAllVehicles = async (): Promise<Vehicle[]> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('vehicles').select('*').order('name');
-    if (error) throw new Error(`Error cargando vehículos: ${error.message}`);
+    if (error) throw new Error(`Error cargando vehículos: ${getErrorMessage(error)}`);
     return data.map(transformVehicle);
   }
   return loadMockDB().vehicles;
@@ -388,7 +497,7 @@ export const createVehicle = async (vehicle: Omit<Vehicle, 'id'>): Promise<Vehic
     };
 
     const { data, error } = await supabase.rpc('manage_vehicle_v5', { payload });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(getErrorMessage(error));
     if (!data) throw new Error("Sin respuesta de BD.");
     
     return transformVehicle(data);
@@ -416,7 +525,7 @@ export const updateVehicle = async (vehicle: Vehicle): Promise<void> => {
     };
 
     const { data, error } = await supabase.rpc('manage_vehicle_v5', { payload });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(getErrorMessage(error));
     return;
   }
 
@@ -433,7 +542,7 @@ export const deleteVehicle = async (id: string): Promise<void> => {
   if (isSupabaseConfigured() && supabase) {
     const payload = { op: 'delete', id: id };
     const { error } = await supabase.rpc('manage_vehicle_v5', { payload });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(getErrorMessage(error));
     return;
   }
 
@@ -464,7 +573,7 @@ export const getAllLogs = async (): Promise<VehicleLog[]> => {
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     const { data, error } = await supabase.from('logs').select('*').order('start_time', { ascending: false });
-    if (error) throw new Error(`Error cargando historial: ${error.message}`);
+    if (error) throw new Error(`Error cargando historial: ${getErrorMessage(error)}`);
     return data.map(transformLog);
   }
   return loadMockDB().logs;
@@ -496,7 +605,7 @@ export const startTrip = async (vehicleId: string, user: User): Promise<void> =>
   const supabase = getSupabaseClient();
   if (isSupabaseConfigured() && supabase) {
     
-    // 1. AUTO-HEALING: Close any previous ghost trips for this vehicle
+    // 1. AUTO-HEALING: Close any previous ghost trips
     const ghostLog = await getActiveLog(vehicleId);
     if (ghostLog) {
         console.warn(`Cerrando viaje fantasma para vehículo ${vehicleId}`);
@@ -509,8 +618,7 @@ export const startTrip = async (vehicleId: string, user: User): Promise<void> =>
     const v = await getVehicle(vehicleId);
     if (!v) throw new Error('Vehicle not found');
 
-    // 2. CRITICAL FIX: Ensure Profile Exists (Upsert) to avoid FK error
-    // Even if user is logged in, profile table might be missing the row
+    // 2. ENSURE PROFILE EXISTS
     const { error: profileError } = await supabase.from('profiles').upsert({
         id: user.id,
         email: user.email,
@@ -518,7 +626,6 @@ export const startTrip = async (vehicleId: string, user: User): Promise<void> =>
         role: user.role
     }, { onConflict: 'id' });
 
-    // If normal upsert fails (e.g. RLS), try RPC fallback
     if (profileError) {
          await supabase.rpc('create_profile', {
             _id: user.id,
@@ -537,9 +644,7 @@ export const startTrip = async (vehicleId: string, user: User): Promise<void> =>
     });
 
     if (logError) {
-        // Code 23503 is Foreign Key Violation
         if (logError.code === '23503') {
-             // Last ditch effort: Force create via RPC again then retry log
              await supabase.rpc('create_profile', {
                 _id: user.id,
                 _email: user.email,
@@ -547,7 +652,6 @@ export const startTrip = async (vehicleId: string, user: User): Promise<void> =>
                 _role: user.role
              });
              
-             // Retry insert
              const { error: retryError } = await supabase.from('logs').insert({
                 vehicle_id: vehicleId,
                 driver_id: user.id,
@@ -556,9 +660,9 @@ export const startTrip = async (vehicleId: string, user: User): Promise<void> =>
                 start_mileage: v.currentMileage
              });
              
-             if (retryError) throw new Error("Error de integridad: Tu usuario no está sincronizado en la base de datos. Contacta al administrador.");
+             if (retryError) throw new Error("Error de integridad: Usuario no sincronizado. Contacta al administrador.");
         } else {
-            throw new Error(logError.message);
+            throw new Error(getErrorMessage(logError));
         }
     }
 
@@ -606,7 +710,7 @@ export const endTrip = async (vehicleId: string): Promise<void> => {
       end_time: new Date().toISOString(),
       end_mileage: endMileage
     }).eq('id', activeLog.id);
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(getErrorMessage(error));
 
     const updatePayload = {
          op: 'update',
